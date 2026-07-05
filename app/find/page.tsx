@@ -1,9 +1,9 @@
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { findMatchingExercise } from '@/lib/matching';
 import Nav from '@/components/Nav';
+import BilliardTable, { ShotDiagram } from '@/components/BilliardTable';
 
 const ERROR_TYPES = [
   { value: 'промах', label: 'Промах' },
@@ -15,26 +15,28 @@ const ERROR_TYPES = [
   { value: 'ошибка_позиции', label: 'Ошибка позиции' },
 ];
 
-const DISTANCES = [
-  { value: 'close', label: 'Близко' },
-  { value: 'medium', label: 'Средне' },
-  { value: 'far', label: 'Далеко' },
-];
+const DISTANCE_LABELS: Record<string, string> = {
+  close: 'Близко',
+  medium: 'Средне',
+  far: 'Далеко',
+};
 
 export default function FindExercise() {
-  const router = useRouter();
+  const [diagram, setDiagram] = useState<ShotDiagram | null>(null);
   const [errorType, setErrorType] = useState('');
-  const [angle, setAngle] = useState(30);
-  const [distance, setDistance] = useState<'close' | 'medium' | 'far'>('medium');
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmit() {
+    if (!diagram || !errorType) return;
     setLoading(true);
     setResult(null);
 
-    const { exercise, matchQuality } = await findMatchingExercise({ errorType, angle, distance });
+    const { exercise, matchQuality } = await findMatchingExercise({
+      errorType,
+      angle: diagram.angle,
+      distance: diagram.distance,
+    });
 
     const { data: sessionData } = await supabase.auth.getSession();
     const userId = sessionData.session?.user.id;
@@ -43,8 +45,8 @@ export default function FindExercise() {
       await supabase.from('shot_logs').insert({
         user_id: userId,
         error_type: errorType,
-        angle,
-        distance,
+        angle: diagram.angle,
+        distance: diagram.distance,
         matched_exercise_id: exercise?.id ?? null,
       });
     }
@@ -56,67 +58,53 @@ export default function FindExercise() {
   return (
     <main className="min-h-screen bg-felt2">
       <Nav />
-      <div className="max-w-xl mx-auto p-6">
-        <h1 className="text-2xl font-bold text-white mb-6">⚡ Зафиксировать удар</h1>
+      <div className="max-w-3xl mx-auto p-6">
+        <h1 className="text-2xl font-bold text-white mb-2">⚡ Зафиксировать удар</h1>
+        <p className="text-white/60 text-sm mb-6">
+          Отметь на столе биток, прицельный шар и точку, куда целился — система сама посчитает угол и дистанцию.
+        </p>
 
-        <form onSubmit={handleSubmit} className="bg-black/30 p-6 rounded-2xl space-y-5">
-          <div>
-            <label className="text-white/70 text-sm block mb-2">Тип ошибки</label>
-            <select
-              value={errorType}
-              onChange={(e) => setErrorType(e.target.value)}
-              required
-              className="w-full p-3 rounded-lg bg-white/10 text-white"
-            >
-              <option value="">Выбери ошибку…</option>
-              {ERROR_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-          </div>
+        <div className="bg-black/30 p-4 rounded-2xl">
+          <BilliardTable onComplete={setDiagram} />
+        </div>
 
-          <div>
-            <label className="text-white/70 text-sm block mb-2">
-              Угол удара: {angle}°
-            </label>
-            <input
-              type="range"
-              min={0}
-              max={90}
-              value={angle}
-              onChange={(e) => setAngle(Number(e.target.value))}
-              className="w-full"
-            />
-          </div>
-
-          <div>
-            <label className="text-white/70 text-sm block mb-2">Дистанция до шара</label>
-            <div className="flex gap-2">
-              {DISTANCES.map((d) => (
-                <button
-                  type="button"
-                  key={d.value}
-                  onClick={() => setDistance(d.value as any)}
-                  className={`flex-1 p-3 rounded-lg font-medium ${
-                    distance === d.value ? 'bg-accent text-black' : 'bg-white/10 text-white/70'
-                  }`}
-                >
-                  {d.label}
-                </button>
-              ))}
+        {diagram && (
+          <div className="bg-black/30 p-6 rounded-2xl mt-4 space-y-5">
+            <div className="grid grid-cols-2 gap-4 text-white/80">
+              <div>
+                Угол среза: <b className="text-accent">{diagram.angle}°</b>
+              </div>
+              <div>
+                Дистанция: <b className="text-accent">{DISTANCE_LABELS[diagram.distance]}</b>
+              </div>
             </div>
-          </div>
 
-          <button
-            disabled={loading || !errorType}
-            className="w-full p-3 rounded-lg bg-accent text-black font-semibold hover:opacity-90"
-          >
-            {loading ? 'Ищем упражнение…' : 'Подобрать упражнение'}
-          </button>
-        </form>
+            <div>
+              <label className="text-white/70 text-sm block mb-2">Что пошло не так?</label>
+              <select
+                value={errorType}
+                onChange={(e) => setErrorType(e.target.value)}
+                className="w-full p-3 rounded-lg bg-white/10 text-white"
+              >
+                <option value="">Выбери тип ошибки…</option>
+                {ERROR_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={handleSubmit}
+              disabled={loading || !errorType}
+              className="w-full p-3 rounded-lg bg-accent text-black font-semibold hover:opacity-90 disabled:opacity-50"
+            >
+              {loading ? 'Ищем упражнение…' : 'Подобрать упражнение'}
+            </button>
+          </div>
+        )}
 
         {result && (
-          <div className="mt-6 bg-black/40 p-6 rounded-2xl">
+          <div className="mt-4 bg-black/40 p-6 rounded-2xl">
             {result.exercise ? (
               <>
                 <h2 className="text-xl font-bold text-accent mb-2">{result.exercise.name}</h2>
