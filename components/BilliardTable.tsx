@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 type Point = { x: number; y: number };
 
@@ -59,6 +59,40 @@ function categorizeDistance(px: number): 'close' | 'medium' | 'far' {
   return 'far';
 }
 
+// Приблизительное направление битка ПОСЛЕ контакта с прицельным шаром.
+// Упрощённая физика:
+//  - прицельный шар катится по «линии центров» (в сторону, куда целились);
+//  - биток без винта уходит по касательной — перпендикуляр к линии хода
+//    прицельного шара (это составляющая скорости битка поперёк линии центров);
+//  - накат (spin > 0) доворачивает траекторию битка ВПЕРЁД по ходу шара,
+//    оттяжка (spin < 0) — НАЗАД;
+//  - боковой винт слегка доворачивает конус вбок.
+// Возвращает единичный вектор направления, либо null для вырожденного случая
+// (прямой удар без винта — биток останавливается, лететь некуда).
+function cueBallDirection(
+  cue: Point,
+  obj: Point,
+  target: Point,
+  spinAmt: number,
+  englishAmt: number
+): Point | null {
+  const aim = norm(sub(obj, cue)); // куда двигался биток до удара
+  const objectDir = norm(sub(target, obj)); // куда покатился прицельный шар
+
+  const along = aim.x * objectDir.x + aim.y * objectDir.y;
+  // касательная составляющая скорости битка (чистый стан-удар)
+  const tangent = { x: aim.x - along * objectDir.x, y: aim.y - along * objectDir.y };
+
+  // накат толкает вперёд по ходу шара, оттяжка — назад
+  const forward = { x: objectDir.x * spinAmt * 0.9, y: objectDir.y * spinAmt * 0.9 };
+
+  const raw = { x: tangent.x + forward.x, y: tangent.y + forward.y };
+  if (len(raw) < 0.02) return null; // прямой стан-удар — биток стоит на месте
+
+  // боковой винт слегка доворачивает конус
+  return norm(rotate(norm(raw), englishAmt * 12));
+}
+
 export default function BilliardTable({
   onComplete,
 }: {
@@ -74,16 +108,25 @@ export default function BilliardTable({
   const [intended, setIntended] = useState<Point | null>(null);
   const [actual, setActual] = useState<Point | null>(null);
 
-  const readyForSpin = !!cueBall && !!objectBall && !spinMarked;
-  const readyForIntended = spinMarked && !intended;
-  const readyForActual = !!intended && !actual;
+  // Ручная (необязательно прямая) траектория битка после удара
+  const [pathMode, setPathMode] = useState(false);
+  const [cuePath, setCuePath] = useState<Point[]>([]);
+  const pathRef = useRef<Point[]>([]);
+  const drawingRef = useRef(false);
 
-  function tableClick(e: React.MouseEvent<SVGSVGElement>) {
+  const done = !!actual;
+
+  function toPoint(e: React.MouseEvent<SVGSVGElement>): Point {
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * W;
     const y = ((e.clientY - rect.top) / rect.height) * H;
-    const point = { x: Math.round(x), y: Math.round(y) };
+    return { x: Math.round(x), y: Math.round(y) };
+  }
+
+  function tableClick(e: React.MouseEvent<SVGSVGElement>) {
+    if (pathMode) return; // в режиме рисования клики не расставляют шары
+    const point = toPoint(e);
 
     if (!cueBall) {
       setCueBall(point);
@@ -153,6 +196,7 @@ export default function BilliardTable({
   }
 
   function handlePocketClick(p: Point) {
+    if (pathMode) return;
     if (!cueBall || !objectBall || !spinMarked) return;
     if (!intended) {
       finalizeTarget('intended', p);
@@ -182,6 +226,30 @@ export default function BilliardTable({
     setSpinMarked(true);
   }
 
+  // ----- Ручное рисование траектории битка (можно кривой) -----
+  function pathDown(e: React.MouseEvent<SVGSVGElement>) {
+    if (!pathMode) return;
+    e.preventDefault();
+    drawingRef.current = true;
+    pathRef.current = [toPoint(e)];
+    setCuePath([...pathRef.current]);
+  }
+  function pathMove(e: React.MouseEvent<SVGSVGElement>) {
+    if (!pathMode || !drawingRef.current) return;
+    e.preventDefault();
+    pathRef.current = [...pathRef.current, toPoint(e)];
+    setCuePath([...pathRef.current]);
+  }
+  function pathUp() {
+    if (!pathMode) return;
+    drawingRef.current = false;
+  }
+  function clearPath() {
+    pathRef.current = [];
+    drawingRef.current = false;
+    setCuePath([]);
+  }
+
   function reset() {
     setCueBall(null);
     setObjectBall(null);
@@ -192,33 +260,29 @@ export default function BilliardTable({
     setSpin(0);
     setIntended(null);
     setActual(null);
+    setPathMode(false);
+    clearPath();
   }
 
-  // ----- Зона примерной траектории битка после удара (условная, не настоящая физика) -----
-  let zonePath: string | null = null;
-  if (cueBall && objectBall && spinMarked) {
-    const aim = norm(sub(objectBall, cueBall));
-    const refDir = intended ? norm(sub(intended, objectBall)) : aim;
-    const cross = aim.x * refDir.y - aim.y * refDir.x;
-    const perp = cross >= 0 ? rotate(aim, -90) : rotate(aim, 90);
-
-    // накат/оттяжка сдвигают направление к линии удара вперёд/назад
-    const spinRotation = spin * 35; // градусы
-    // винт (лево/право) расширяет и сдвигает конус
-    const englishRotation = english * 20;
-
-    const centerDir = rotate(perp, spinRotation + englishRotation);
-    const spread = 18 + Math.abs(english) * 18;
-    const length = 200 + spin * 60;
-
-    const dirA = rotate(centerDir, -spread);
-    const dirB = rotate(centerDir, spread);
-
-    const pA = { x: objectBall.x + dirA.x * length, y: objectBall.y + dirA.y * length };
-    const pB = { x: objectBall.x + dirB.x * length, y: objectBall.y + dirB.y * length };
-
-    zonePath = `M ${objectBall.x} ${objectBall.y} L ${pA.x} ${pA.y} L ${pB.x} ${pB.y} Z`;
+  // ----- Зона примерной траектории битка после удара -----
+  // Появляется только ПОСЛЕ выбора прицела (в какую лузу/точку целились),
+  // потому что направление битка зависит от того, куда идёт прицельный шар.
+  let zone: { d: string; far: Point } | null = null;
+  if (cueBall && objectBall && spinMarked && intended) {
+    const centerDir = cueBallDirection(cueBall, objectBall, intended, spin, english);
+    if (centerDir) {
+      const length = 260 + spin * 70; // накат — дальше, оттяжка — короче
+      const spread = 16 + Math.abs(english) * 18; // винт расширяет конус
+      const dirA = rotate(centerDir, -spread);
+      const dirB = rotate(centerDir, spread);
+      const far = { x: objectBall.x + centerDir.x * length, y: objectBall.y + centerDir.y * length };
+      const pA = { x: objectBall.x + dirA.x * length, y: objectBall.y + dirA.y * length };
+      const pB = { x: objectBall.x + dirB.x * length, y: objectBall.y + dirB.y * length };
+      zone = { d: `M ${objectBall.x} ${objectBall.y} L ${pA.x} ${pA.y} L ${pB.x} ${pB.y} Z`, far };
+    }
   }
+
+  const cuePathD = cuePath.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 
   const instructions = !cueBall
     ? '1. Кликни на стол — где стоит биток (белый шар)'
@@ -232,7 +296,9 @@ export default function BilliardTable({
     ? '4. Кликни в лузу или на борт — куда целился'
     : !actual
     ? '5. Кликни — куда шар покатился на самом деле'
-    : 'Готово! Диаграмма построена.';
+    : pathMode
+    ? 'Зажми левую кнопку и веди по столу — линию битка можно нарисовать любой формы.'
+    : 'Готово! Синяя зона — примерный полёт битка. Можно нарисовать реальную траекторию вручную.';
 
   return (
     <div>
@@ -241,9 +307,36 @@ export default function BilliardTable({
       <svg
         viewBox={`0 0 ${W} ${H}`}
         onClick={tableClick}
-        className="w-full rounded-xl cursor-crosshair"
-        style={{ background: '#1b6b3a', border: '10px solid #6b3f1f' }}
+        onMouseDown={pathDown}
+        onMouseMove={pathMove}
+        onMouseUp={pathUp}
+        onMouseLeave={pathUp}
+        className="w-full rounded-xl"
+        style={{
+          background: '#1b6b3a',
+          border: '10px solid #6b3f1f',
+          cursor: pathMode ? 'crosshair' : done ? 'default' : 'crosshair',
+          touchAction: pathMode ? 'none' : 'auto',
+        }}
       >
+        <defs>
+          {zone && (
+            <linearGradient
+              id="cueZoneGrad"
+              gradientUnits="userSpaceOnUse"
+              x1={objectBall!.x}
+              y1={objectBall!.y}
+              x2={zone.far.x}
+              y2={zone.far.y}
+            >
+              {/* у шара ярче, к концу траектории затухает */}
+              <stop offset="0" stopColor="#3ea6ff" stopOpacity="0.5" />
+              <stop offset="0.6" stopColor="#3ea6ff" stopOpacity="0.22" />
+              <stop offset="1" stopColor="#3ea6ff" stopOpacity="0" />
+            </linearGradient>
+          )}
+        </defs>
+
         {POCKETS.map((p, i) => (
           <circle
             key={i}
@@ -256,12 +349,12 @@ export default function BilliardTable({
               e.stopPropagation();
               handlePocketClick(p);
             }}
-            style={{ cursor: spinMarked && !actual ? 'pointer' : 'default' }}
+            style={{ cursor: !pathMode && spinMarked && !actual ? 'pointer' : 'default' }}
           />
         ))}
 
-        {/* Условная зона возможной траектории битка */}
-        {zonePath && <path d={zonePath} fill="#3ea6ff" opacity={0.25} />}
+        {/* Условная зона возможной траектории битка (длинная, затухающая) */}
+        {zone && <path d={zone.d} fill="url(#cueZoneGrad)" />}
 
         {/* Линия удара: биток -> прицельный шар */}
         {cueBall && objectBall && (
@@ -276,6 +369,11 @@ export default function BilliardTable({
         {/* Линия факта */}
         {objectBall && actual && (
           <line x1={objectBall.x} y1={objectBall.y} x2={actual.x} y2={actual.y} stroke="#ff5d5d" strokeWidth={2.5} />
+        )}
+
+        {/* Нарисованная вручную траектория битка */}
+        {cuePathD && (
+          <path d={cuePathD} fill="none" stroke="#38f9d7" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
         )}
 
         {positionBall && (
@@ -323,6 +421,28 @@ export default function BilliardTable({
         >
           + Отметить шар для выхода (необязательно)
         </button>
+      )}
+
+      {/* Ручная траектория битка — доступна после того, как всё отмечено */}
+      {done && (
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setPathMode((v) => !v)}
+            className={`text-sm px-3 py-1.5 rounded-full ${pathMode ? 'bg-accent text-black' : 'bg-white/10 text-white/80 hover:text-white'}`}
+          >
+            {pathMode ? 'Готово, не рисую' : '✏️ Нарисовать реальную траекторию битка'}
+          </button>
+          {cuePath.length > 0 && (
+            <button
+              type="button"
+              onClick={clearPath}
+              className="text-white/60 text-sm underline hover:text-white"
+            >
+              Очистить траекторию
+            </button>
+          )}
+        </div>
       )}
 
       <button type="button" onClick={reset} className="mt-3 text-white/60 text-sm hover:text-white underline block">
