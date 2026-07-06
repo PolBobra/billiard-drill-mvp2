@@ -20,10 +20,11 @@ export default function FindExercise() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (diagram?.suggestedError) {
+    // подставляем подсказку по отклонению только если игрок ещё сам не выбрал
+    if (diagram?.suggestedError && !errorType) {
       setErrorType(diagram.suggestedError);
     }
-  }, [diagram]);
+  }, [diagram, errorType]);
 
   async function handleSubmit() {
     if (!diagram || !errorType) return;
@@ -84,17 +85,18 @@ export default function FindExercise() {
 
             <div>
               <label className="text-white/70 text-sm block mb-2">Что пошло не так?</label>
-              <select
-                value={errorType}
-                onChange={(e) => setErrorType(e.target.value)}
-                style={{ colorScheme: 'dark' }}
-                className="w-full p-3 rounded-lg bg-white/10 text-white border border-white/20"
-              >
-                <option value="">Выбери тип ошибки…</option>
+              <div className="flex gap-2 flex-wrap">
                 {ERROR_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => setErrorType(t.value)}
+                    className={`px-4 py-2 rounded-full text-sm ${errorType === t.value ? 'bg-accent text-black' : 'bg-white/10 text-white/70 hover:text-white'}`}
+                  >
+                    {t.label}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
 
             <button
@@ -102,15 +104,17 @@ export default function FindExercise() {
               disabled={loading || !errorType}
               className="w-full p-3 rounded-lg bg-accent text-black font-semibold hover:opacity-90 disabled:opacity-50"
             >
-              {loading ? 'Ищем упражнение…' : 'Подобрать упражнение'}
+              {loading ? 'Добавляем…' : 'Добавить ошибку'}
             </button>
           </div>
         )}
 
         {result && (
           <div className="mt-4 bg-black/40 p-6 rounded-2xl">
+            <p className="text-green-400 text-sm mb-4">✓ Ошибка добавлена — смотри её в разделе «Мои ошибки».</p>
             {result.exercise ? (
               <>
+                <p className="text-white/50 text-xs mb-1">Рекомендуемое упражнение:</p>
                 <h2 className="text-xl font-bold text-accent mb-2">{result.exercise.name}</h2>
                 <p className="text-white/80 mb-3">{result.exercise.description}</p>
                 <div className="grid grid-cols-2 gap-3 text-sm text-white/70">
