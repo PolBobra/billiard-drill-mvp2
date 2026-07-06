@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { errorLabel } from '@/lib/errorTypes';
 import Nav from '@/components/Nav';
 
 type Profile = {
@@ -103,14 +104,19 @@ export default function Dashboard() {
         </div>
 
         <div>
-          <h2 className="text-xl font-semibold text-white mb-3">Последние ошибки</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xl font-semibold text-white">Последние ошибки</h2>
+            <button onClick={() => router.push('/errors')} className="text-accent text-sm hover:underline">
+              Смотреть все →
+            </button>
+          </div>
           {recentLogs.length === 0 ? (
             <p className="text-white/50">Пока нет зафиксированных ударов.</p>
           ) : (
             <ul className="space-y-2">
               {recentLogs.map((log) => (
                 <li key={log.id} className="bg-black/30 p-3 rounded-lg flex justify-between text-white/80">
-                  <span>{log.error_type}</span>
+                  <span>{errorLabel(log.error_type)}</span>
                   <span className={log.completed ? 'text-green-400' : 'text-yellow-400'}>
                     {log.completed ? 'выполнено' : 'в работе'}
                   </span>

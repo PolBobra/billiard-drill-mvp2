@@ -2,18 +2,10 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { findMatchingExercise } from '@/lib/matching';
+import { recomputeSkills } from '@/lib/skills';
+import { ERROR_TYPES, errorLabel } from '@/lib/errorTypes';
 import Nav from '@/components/Nav';
 import BilliardTable, { ShotDiagram } from '@/components/BilliardTable';
-
-const ERROR_TYPES = [
-  { value: 'недокрут', label: 'Недорез' },
-  { value: 'перекрут', label: 'Перерез' },
-  { value: 'слабый_удар', label: 'Слабо' },
-  { value: 'сильный_удар', label: 'Сильно' },
-  { value: 'винт', label: 'Ошибка из-за винта' },
-  { value: 'плохой_выход', label: 'Плохой выход' },
-  { value: 'ошибка_позиции', label: 'Ошибка позиции' },
-];
 
 const DISTANCE_LABELS: Record<string, string> = {
   close: 'Близко',
@@ -55,6 +47,7 @@ export default function FindExercise() {
         distance: diagram.distance,
         matched_exercise_id: exercise?.id ?? null,
       });
+      await recomputeSkills(userId);
     }
 
     setResult({ exercise, matchQuality });
@@ -85,7 +78,7 @@ export default function FindExercise() {
 
             {diagram.suggestedError && (
               <p className="text-yellow-400 text-xs">
-                По отклонению похоже на «{ERROR_TYPES.find((t) => t.value === diagram.suggestedError)?.label}» — можно поменять ниже, если это не так.
+                По отклонению похоже на «{errorLabel(diagram.suggestedError)}» — можно поменять ниже, если это не так.
               </p>
             )}
 
@@ -97,9 +90,9 @@ export default function FindExercise() {
                 style={{ colorScheme: 'dark' }}
                 className="w-full p-3 rounded-lg bg-white/10 text-white border border-white/20"
               >
-                <option value="" className="bg-felt2 text-white">Выбери тип ошибки…</option>
+                <option value="">Выбери тип ошибки…</option>
                 {ERROR_TYPES.map((t) => (
-                  <option key={t.value} value={t.value} className="bg-felt2 text-white">{t.label}</option>
+                  <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
             </div>
