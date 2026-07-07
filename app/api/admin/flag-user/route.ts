@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/adminAuth';
+import { requireAdmin, isAdminFail } from '@/lib/adminAuth';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export async function POST(req: Request) {
   const auth = await requireAdmin(req);
-  if (!auth.ok) return NextResponse.json({ error: 'Forbidden' }, { status: auth.status });
+  if (isAdminFail(auth)) return NextResponse.json({ error: 'Forbidden' }, { status: auth.status });
 
   const { userId, flagged } = await req.json();
   if (!userId || typeof flagged !== 'boolean') {
