@@ -91,9 +91,9 @@ export default function BilliardTable({
     const point = clampPlay(toPoint(e));
     const raw = toPoint(e);
     if (!cueBall) return setCueBall(point);
-    if (!objectBall) return setObjectBall(resolveBallOverlap(point, [cueBall]));
+    if (!objectBall) return setObjectBall(clampPlay(resolveBallOverlap(point, [cueBall])));
     if (awaitingPositionBall && !positionBall) {
-      setPositionBall(resolveBallOverlap(point, [cueBall, objectBall]));
+      setPositionBall(clampPlay(resolveBallOverlap(point, [cueBall, objectBall])));
       setAwaitingPositionBall(false);
       return;
     }

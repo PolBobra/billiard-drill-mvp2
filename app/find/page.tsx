@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { findMatchingExercise } from '@/lib/matching';
 import { recomputeSkills } from '@/lib/skills';
@@ -14,10 +15,24 @@ const DISTANCE_LABELS: Record<string, string> = {
 };
 
 export default function FindExercise() {
+  const router = useRouter();
   const [diagram, setDiagram] = useState<ShotDiagram | null>(null);
   const [errorType, setErrorType] = useState('');
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    async function checkAuth() {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        router.replace('/login');
+        return;
+      }
+      setCheckingAuth(false);
+    }
+    checkAuth();
+  }, [router]);
 
   useEffect(() => {
     // подставляем подсказку по отклонению только если игрок ещё сам не выбрал
@@ -25,6 +40,14 @@ export default function FindExercise() {
       setErrorType(diagram.suggestedError);
     }
   }, [diagram, errorType]);
+
+  if (checkingAuth) {
+    return (
+      <main className="min-h-screen bg-felt2 text-white/70 flex items-center justify-center">
+        Загрузка…
+      </main>
+    );
+  }
 
   async function handleSubmit() {
     if (!diagram || !errorType) return;
