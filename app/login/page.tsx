@@ -1,7 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function Login() {
@@ -11,21 +12,34 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [passwordUpdated, setPasswordUpdated] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance>(null);
 
   useEffect(() => {
-    // читаем query-параметр через window.location, чтобы не тянуть useSearchParams
-    // (в App Router это требует отдельного Suspense-бордера)
     setPasswordUpdated(new URLSearchParams(window.location.search).get('updated') === '1');
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+
+    if (!captchaToken) {
+      setError('Подождите, идёт проверка безопасности…');
+      return;
+    }
+
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken },
+    });
     setLoading(false);
+
     if (error) {
       setError('Неверный email или пароль');
+      turnstileRef.current?.reset();
+      setCaptchaToken(null);
     } else {
       router.push('/dashboard');
     }
@@ -57,10 +71,20 @@ export default function Login() {
             Забыли пароль?
           </Link>
         </div>
+
+        <Turnstile
+          ref={turnstileRef}
+          siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
+          onSuccess={(token) => setCaptchaToken(token)}
+          onExpire={() => setCaptchaToken(null)}
+          onError={() => setCaptchaToken(null)}
+          options={{ theme: 'dark' }}
+        />
+
         {error && <p className="text-red-400 text-sm">{error}</p>}
         <button
-          disabled={loading}
-          className="w-full p-3 rounded-lg bg-accent text-black font-semibold hover:opacity-90"
+          disabled={loading || !captchaToken}
+          className="w-full p-3 rounded-lg bg-accent text-black font-semibold hover:opacity-90 disabled:opacity-50"
         >
           {loading ? 'Входим…' : 'Войти'}
         </button>

@@ -1,7 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function Register() {
@@ -13,25 +14,34 @@ export default function Register() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!agreed) return;
+
+    if (!captchaToken) {
+      setError('Подождите, идёт проверка безопасности…');
+      return;
+    }
+
     setError('');
     setLoading(true);
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name } },
+      options: { data: { name }, captchaToken },
     });
     if (error) {
       setLoading(false);
       setError(error.message);
+      turnstileRef.current?.reset();
+      setCaptchaToken(null);
       return;
     }
 
     if (!data.session) {
-      // Включено подтверждение почты — сессии ещё нет, аккаунт неактивен до перехода по ссылке.
       setLoading(false);
       setNeedsConfirmation(true);
       return;
@@ -114,9 +124,18 @@ export default function Register() {
           </span>
         </label>
 
+        <Turnstile
+          ref={turnstileRef}
+          siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
+          onSuccess={(token) => setCaptchaToken(token)}
+          onExpire={() => setCaptchaToken(null)}
+          onError={() => setCaptchaToken(null)}
+          options={{ theme: 'dark' }}
+        />
+
         {error && <p className="text-red-400 text-sm">{error}</p>}
         <button
-          disabled={loading || !agreed}
+          disabled={loading || !agreed || !captchaToken}
           className="w-full p-3 rounded-lg bg-accent text-black font-semibold hover:opacity-90 disabled:opacity-50"
         >
           {loading ? 'Создаём…' : 'Создать аккаунт'}
