@@ -2,7 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+html,
 body {
-  background: #0f1115;
+  background: #0f4d28; /* felt2 — совпадает с фоном страниц, чтобы по краям не было чёрного */
   color: #f2f2f2;
+  overflow-x: hidden; /* убираем горизонтальное «болтание» сайта */
+}
+
+body {
+  overscroll-behavior-y: contain; /* меньше резинового оттягивания вниз/вверх */
 }
