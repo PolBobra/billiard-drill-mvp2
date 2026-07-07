@@ -128,3 +128,38 @@ alter table profiles add column if not exists terms_accepted_at timestamptz;
 alter table profiles add column if not exists is_admin boolean default false;
 alter table profiles add column if not exists flagged_suspicious boolean default false;
 -- Себе вручную проставить is_admin = true через Table Editor после выполнения этого блока.
+
+-- ============================================
+-- Клубы: справочник с поиском в профиле + заявки на добавление
+-- ============================================
+create table if not exists clubs (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  city text,
+  created_at timestamptz default now(),
+  unique (name, city)
+);
+alter table clubs enable row level security;
+create policy "Anyone logged in can view clubs" on clubs
+  for select using (auth.role() = 'authenticated');
+
+create table if not exists addition_requests (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users on delete cascade,
+  name text not null,
+  city text,
+  status text not null default 'pending', -- pending / approved / rejected
+  created_at timestamptz default now()
+);
+alter table addition_requests enable row level security;
+create policy "Users can insert own club requests" on addition_requests
+  for insert with check (auth.uid() = user_id);
+create policy "Users can view own club requests" on addition_requests
+  for select using (auth.uid() = user_id);
+-- список pending-заявок и одобрение/отклонение идёт через /api/admin/club-requests
+-- (сервисный ключ, тот же паттерн, что и у остальной админки), поэтому отдельная
+-- RLS-политика "админ видит все заявки" не нужна.
+
+-- profiles.club (текст) заменяется ссылкой на справочник клубов; старую
+-- текстовую колонку не трогаем (не дропаем), просто больше не используем.
+alter table profiles add column if not exists club_id uuid references clubs(id);

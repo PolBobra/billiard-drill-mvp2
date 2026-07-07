@@ -8,7 +8,8 @@ type AdminUser = {
   id: string;
   name: string | null;
   full_name: string | null;
-  club: string | null;
+  club_name: string | null;
+  club_city: string | null;
   coach: string | null;
   cue: string | null;
   created_at: string;
@@ -18,13 +19,27 @@ type AdminUser = {
   verified: boolean;
 };
 
+type ClubRequest = {
+  id: string;
+  name: string;
+  city: string | null;
+  status: string;
+  created_at: string;
+};
+
 export default function AdminPage() {
   const router = useRouter();
+  const [tab, setTab] = useState<'users' | 'clubRequests'>('users');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  const [clubRequests, setClubRequests] = useState<ClubRequest[]>([]);
+  const [clubRequestsLoaded, setClubRequestsLoaded] = useState(false);
+  const [clubRequestsError, setClubRequestsError] = useState('');
+  const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
 
   async function authHeader() {
     const { data } = await supabase.auth.getSession();
@@ -62,6 +77,37 @@ export default function AdminPage() {
     }
     load();
   }, [router]);
+
+  useEffect(() => {
+    if (tab !== 'clubRequests' || clubRequestsLoaded) return;
+    async function loadClubRequests() {
+      const res = await fetch('/api/admin/club-requests', { headers: await authHeader() });
+      const json = await res.json();
+      if (!res.ok) {
+        setClubRequestsError(json.error || 'Не удалось загрузить заявки');
+      } else {
+        setClubRequests(json.requests);
+      }
+      setClubRequestsLoaded(true);
+    }
+    loadClubRequests();
+  }, [tab, clubRequestsLoaded]);
+
+  async function resolveClubRequest(id: string, action: 'approve' | 'reject') {
+    setBusyRequestId(id);
+    const res = await fetch('/api/admin/club-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ id, action }),
+    });
+    if (res.ok) {
+      setClubRequests((prev) => prev.filter((r) => r.id !== id));
+    } else {
+      const json = await res.json().catch(() => ({}));
+      alert(json.error || 'Не удалось обработать заявку');
+    }
+    setBusyRequestId(null);
+  }
 
   async function toggleFlag(u: AdminUser) {
     setBusyId(u.id);
@@ -114,74 +160,145 @@ export default function AdminPage() {
     <main className="min-h-screen bg-felt2">
       <Nav />
       <div className="max-w-6xl mx-auto p-6">
-        <h1 className="text-2xl font-bold text-white mb-6">🛡 Модерация пользователей</h1>
+        <h1 className="text-2xl font-bold text-white mb-6">🛡 Модерация</h1>
 
-        {error && <p className="text-red-400 mb-4">{error}</p>}
-
-        <input
-          type="text"
-          placeholder="Поиск по имени или email…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-md mb-6 p-3 rounded-lg bg-white/10 text-white placeholder-white/50"
-        />
-
-        <div className="overflow-x-auto bg-black/30 rounded-2xl">
-          <table className="w-full text-sm text-left text-white/80">
-            <thead className="text-white/50 border-b border-white/10">
-              <tr>
-                <th className="p-3">Имя</th>
-                <th className="p-3">Email</th>
-                <th className="p-3">Клуб</th>
-                <th className="p-3">Тренер</th>
-                <th className="p-3">Кий</th>
-                <th className="p-3">Регистрация</th>
-                <th className="p-3">Verified</th>
-                <th className="p-3">Подозрительный</th>
-                <th className="p-3">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((u) => (
-                <tr key={u.id} className="border-b border-white/5 last:border-0">
-                  <td className="p-3">{u.full_name || u.name || '—'}</td>
-                  <td className="p-3">{u.email}</td>
-                  <td className="p-3">{u.club || '—'}</td>
-                  <td className="p-3">{u.coach || '—'}</td>
-                  <td className="p-3">{u.cue || '—'}</td>
-                  <td className="p-3">{new Date(u.created_at).toLocaleDateString('ru-RU')}</td>
-                  <td className="p-3">{u.verified ? 'да' : 'нет'}</td>
-                  <td className={u.flagged_suspicious ? 'p-3 text-yellow-400' : 'p-3'}>
-                    {u.flagged_suspicious ? 'да' : 'нет'}
-                  </td>
-                  <td className="p-3 whitespace-nowrap space-x-2">
-                    <button
-                      onClick={() => toggleFlag(u)}
-                      disabled={busyId === u.id}
-                      className="text-xs px-3 py-1.5 rounded-full bg-white/10 text-white/80 hover:text-white disabled:opacity-50"
-                    >
-                      {u.flagged_suspicious ? 'Снять пометку' : 'Отметить как подозрительный'}
-                    </button>
-                    <button
-                      onClick={() => deleteUser(u)}
-                      disabled={busyId === u.id}
-                      className="text-xs px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50"
-                    >
-                      Удалить аккаунт
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="p-6 text-center text-white/40">
-                    Ничего не найдено.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setTab('users')}
+            className={`px-4 py-2 rounded-full text-sm ${tab === 'users' ? 'bg-accent text-black' : 'bg-white/10 text-white/70'}`}
+          >
+            Пользователи
+          </button>
+          <button
+            onClick={() => setTab('clubRequests')}
+            className={`px-4 py-2 rounded-full text-sm ${tab === 'clubRequests' ? 'bg-accent text-black' : 'bg-white/10 text-white/70'}`}
+          >
+            Заявки на клубы{clubRequestsLoaded && clubRequests.length > 0 ? ` (${clubRequests.length})` : ''}
+          </button>
         </div>
+
+        {tab === 'users' && (
+          <>
+            {error && <p className="text-red-400 mb-4">{error}</p>}
+
+            <input
+              type="text"
+              placeholder="Поиск по имени или email…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full max-w-md mb-6 p-3 rounded-lg bg-white/10 text-white placeholder-white/50"
+            />
+
+            <div className="overflow-x-auto bg-black/30 rounded-2xl">
+              <table className="w-full text-sm text-left text-white/80">
+                <thead className="text-white/50 border-b border-white/10">
+                  <tr>
+                    <th className="p-3">Имя</th>
+                    <th className="p-3">Email</th>
+                    <th className="p-3">Клуб</th>
+                    <th className="p-3">Тренер</th>
+                    <th className="p-3">Кий</th>
+                    <th className="p-3">Регистрация</th>
+                    <th className="p-3">Verified</th>
+                    <th className="p-3">Подозрительный</th>
+                    <th className="p-3">Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((u) => (
+                    <tr key={u.id} className="border-b border-white/5 last:border-0">
+                      <td className="p-3">{u.full_name || u.name || '—'}</td>
+                      <td className="p-3">{u.email}</td>
+                      <td className="p-3">
+                        {u.club_name ? `${u.club_name}${u.club_city ? `, ${u.club_city}` : ''}` : '—'}
+                      </td>
+                      <td className="p-3">{u.coach || '—'}</td>
+                      <td className="p-3">{u.cue || '—'}</td>
+                      <td className="p-3">{new Date(u.created_at).toLocaleDateString('ru-RU')}</td>
+                      <td className="p-3">{u.verified ? 'да' : 'нет'}</td>
+                      <td className={u.flagged_suspicious ? 'p-3 text-yellow-400' : 'p-3'}>
+                        {u.flagged_suspicious ? 'да' : 'нет'}
+                      </td>
+                      <td className="p-3 whitespace-nowrap space-x-2">
+                        <button
+                          onClick={() => toggleFlag(u)}
+                          disabled={busyId === u.id}
+                          className="text-xs px-3 py-1.5 rounded-full bg-white/10 text-white/80 hover:text-white disabled:opacity-50"
+                        >
+                          {u.flagged_suspicious ? 'Снять пометку' : 'Отметить как подозрительный'}
+                        </button>
+                        <button
+                          onClick={() => deleteUser(u)}
+                          disabled={busyId === u.id}
+                          className="text-xs px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50"
+                        >
+                          Удалить аккаунт
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="p-6 text-center text-white/40">
+                        Ничего не найдено.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {tab === 'clubRequests' && (
+          <>
+            {clubRequestsError && <p className="text-red-400 mb-4">{clubRequestsError}</p>}
+            <div className="overflow-x-auto bg-black/30 rounded-2xl">
+              <table className="w-full text-sm text-left text-white/80">
+                <thead className="text-white/50 border-b border-white/10">
+                  <tr>
+                    <th className="p-3">Название</th>
+                    <th className="p-3">Город</th>
+                    <th className="p-3">Дата заявки</th>
+                    <th className="p-3">Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clubRequests.map((r) => (
+                    <tr key={r.id} className="border-b border-white/5 last:border-0">
+                      <td className="p-3">{r.name}</td>
+                      <td className="p-3">{r.city || '—'}</td>
+                      <td className="p-3">{new Date(r.created_at).toLocaleDateString('ru-RU')}</td>
+                      <td className="p-3 whitespace-nowrap space-x-2">
+                        <button
+                          onClick={() => resolveClubRequest(r.id, 'approve')}
+                          disabled={busyRequestId === r.id}
+                          className="text-xs px-3 py-1.5 rounded-full bg-green-500/20 text-green-400 hover:bg-green-500/30 disabled:opacity-50"
+                        >
+                          Одобрить
+                        </button>
+                        <button
+                          onClick={() => resolveClubRequest(r.id, 'reject')}
+                          disabled={busyRequestId === r.id}
+                          className="text-xs px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50"
+                        >
+                          Отклонить
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {clubRequestsLoaded && clubRequests.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="p-6 text-center text-white/40">
+                        Заявок на рассмотрении нет.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
     </main>
   );

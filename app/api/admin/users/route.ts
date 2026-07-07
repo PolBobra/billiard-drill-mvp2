@@ -10,7 +10,7 @@ export async function GET(req: Request) {
 
   const { data: profiles, error: profilesError } = await admin
     .from('profiles')
-    .select('id, name, full_name, club, coach, cue, created_at, is_admin, flagged_suspicious')
+    .select('id, name, full_name, club_id, coach, cue, created_at, is_admin, flagged_suspicious, clubs(name, city)')
     .order('created_at', { ascending: false });
 
   if (profilesError) {
@@ -31,11 +31,16 @@ export async function GET(req: Request) {
     )
   );
 
-  const users = (profiles || []).map((p) => ({
-    ...p,
-    email: infoById.get(p.id)?.email ?? '',
-    verified: infoById.get(p.id)?.verified ?? false,
-  }));
+  const users = (profiles || []).map((p) => {
+    const club = Array.isArray(p.clubs) ? p.clubs[0] : p.clubs;
+    return {
+      ...p,
+      club_name: club?.name ?? null,
+      club_city: club?.city ?? null,
+      email: infoById.get(p.id)?.email ?? '',
+      verified: infoById.get(p.id)?.verified ?? false,
+    };
+  });
 
   return NextResponse.json({ users });
 }

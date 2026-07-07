@@ -4,11 +4,12 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import Nav from '@/components/Nav';
 
+type Club = { id: string; name: string; city: string | null };
+
 export default function ProfilePage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
-  const [club, setClub] = useState('');
   const [coach, setCoach] = useState('');
   const [cue, setCue] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -16,6 +17,16 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Клуб — автокомплит по таблице clubs, сохраняем club_id
+  const [clubId, setClubId] = useState<string | null>(null);
+  const [selectedClub, setSelectedClub] = useState<Club | null>(null);
+  const [clubQuery, setClubQuery] = useState('');
+  const [clubResults, setClubResults] = useState<Club[]>([]);
+  const [searchingClubs, setSearchingClubs] = useState(false);
+  const [showClubRequestForm, setShowClubRequestForm] = useState(false);
+  const [requestCity, setRequestCity] = useState('');
+  const [clubRequestSent, setClubRequestSent] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -29,21 +40,76 @@ export default function ProfilePage() {
 
       const { data } = await supabase
         .from('profiles')
-        .select('full_name, club, coach, cue, avatar_url')
+        .select('full_name, club_id, coach, cue, avatar_url')
         .eq('id', uid)
         .single();
 
       if (data) {
         setFullName(data.full_name || '');
-        setClub(data.club || '');
         setCoach(data.coach || '');
         setCue(data.cue || '');
         setAvatarUrl(data.avatar_url || '');
+        setClubId(data.club_id || null);
+
+        if (data.club_id) {
+          const { data: clubData } = await supabase
+            .from('clubs')
+            .select('id, name, city')
+            .eq('id', data.club_id)
+            .single();
+          if (clubData) setSelectedClub(clubData);
+        }
       }
       setLoading(false);
     }
     load();
   }, [router]);
+
+  // Поиск клуба с задержкой 300 мс, чтобы не слать запрос на каждую букву
+  useEffect(() => {
+    if (clubQuery.trim().length < 2) {
+      setClubResults([]);
+      setSearchingClubs(false);
+      return;
+    }
+    setSearchingClubs(true);
+    const timer = setTimeout(async () => {
+      const { data } = await supabase
+        .from('clubs')
+        .select('id, name, city')
+        .ilike('name', `%${clubQuery.trim()}%`)
+        .limit(10);
+      setClubResults(data || []);
+      setSearchingClubs(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [clubQuery]);
+
+  function selectClub(c: Club) {
+    setSelectedClub(c);
+    setClubId(c.id);
+    setClubQuery('');
+    setClubResults([]);
+    setShowClubRequestForm(false);
+    setClubRequestSent(false);
+  }
+
+  function clearClub() {
+    setSelectedClub(null);
+    setClubId(null);
+  }
+
+  async function submitClubRequest() {
+    if (!userId || !clubQuery.trim()) return;
+    const { error } = await supabase
+      .from('addition_requests')
+      .insert({ user_id: userId, name: clubQuery.trim(), city: requestCity.trim() || null });
+    if (!error) {
+      setClubRequestSent(true);
+      setShowClubRequestForm(false);
+      setRequestCity('');
+    }
+  }
 
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -74,7 +140,7 @@ export default function ProfilePage() {
     setMessage('');
     const { error } = await supabase
       .from('profiles')
-      .update({ full_name: fullName, club, coach, cue, avatar_url: avatarUrl })
+      .update({ full_name: fullName, club_id: clubId, coach, cue, avatar_url: avatarUrl })
       .eq('id', userId);
     setSaving(false);
     setMessage(error ? 'Ошибка сохранения: ' + error.message : 'Сохранено ✓');
@@ -129,13 +195,84 @@ export default function ProfilePage() {
 
           <div>
             <label className="text-white/70 text-sm block mb-1">Клуб</label>
-            <input
-              type="text"
-              value={club}
-              onChange={(e) => setClub(e.target.value)}
-              className="w-full p-3 rounded-lg bg-white/10 text-white placeholder-white/50"
-              placeholder="Название клуба"
-            />
+            {selectedClub ? (
+              <div className="flex items-center justify-between p-3 rounded-lg bg-white/10 text-white">
+                <span>
+                  {selectedClub.name}
+                  {selectedClub.city ? `, ${selectedClub.city}` : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={clearClub}
+                  className="text-white/50 hover:text-white text-sm shrink-0 ml-3"
+                >
+                  Изменить
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  type="text"
+                  value={clubQuery}
+                  onChange={(e) => {
+                    setClubQuery(e.target.value);
+                    setClubRequestSent(false);
+                    setShowClubRequestForm(false);
+                  }}
+                  className="w-full p-3 rounded-lg bg-white/10 text-white placeholder-white/50"
+                  placeholder="Начни вводить название клуба…"
+                />
+                {clubQuery.trim().length >= 2 && (
+                  <div className="mt-2 bg-black/60 rounded-lg overflow-hidden text-sm">
+                    {searchingClubs ? (
+                      <p className="p-3 text-white/50">Ищем…</p>
+                    ) : clubResults.length > 0 ? (
+                      clubResults.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => selectClub(c)}
+                          className="w-full text-left p-3 hover:bg-white/10 text-white/90 border-b border-white/5 last:border-0"
+                        >
+                          {c.name}
+                          {c.city ? `, ${c.city}` : ''}
+                        </button>
+                      ))
+                    ) : clubRequestSent ? (
+                      <p className="p-3 text-green-400">
+                        Заявка отправлена — будет рассмотрена администратором.
+                      </p>
+                    ) : showClubRequestForm ? (
+                      <div className="p-3 space-y-2">
+                        <p className="text-white/60">Клуб «{clubQuery.trim()}»</p>
+                        <input
+                          type="text"
+                          placeholder="Город"
+                          value={requestCity}
+                          onChange={(e) => setRequestCity(e.target.value)}
+                          className="w-full p-2 rounded bg-white/10 text-white placeholder-white/50"
+                        />
+                        <button
+                          type="button"
+                          onClick={submitClubRequest}
+                          className="px-3 py-1.5 rounded-full bg-accent text-black font-semibold"
+                        >
+                          Отправить заявку
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowClubRequestForm(true)}
+                        className="w-full text-left p-3 text-white/60 hover:text-white"
+                      >
+                        Не нашёл клуб? Отправить заявку
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div>
