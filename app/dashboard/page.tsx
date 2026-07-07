@@ -13,6 +13,7 @@ type Profile = {
   cue_ball_control: number;
   positioning: number;
   stability: number;
+  avatar_url: string | null;
 };
 
 type ShotLog = {
@@ -69,11 +70,21 @@ export default function Dashboard() {
     <main className="min-h-screen bg-felt2">
       <Nav />
       <div className="max-w-4xl mx-auto p-6 space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold text-white">
-            Привет, {profile?.name || 'игрок'} 👋
-          </h1>
-          <p className="text-white/60">Уровень: {profile?.level || 'beginner'}</p>
+        <div className="flex items-center gap-4">
+          {profile?.avatar_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={profile.avatar_url}
+              alt="Фото профиля"
+              className="w-14 h-14 rounded-full object-cover shrink-0"
+            />
+          )}
+          <div>
+            <h1 className="text-3xl font-bold text-white">
+              Привет, {profile?.name || 'игрок'} 👋
+            </h1>
+            <p className="text-white/60">Уровень: {profile?.level || 'beginner'}</p>
+          </div>
         </div>
 
         <button

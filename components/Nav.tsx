@@ -18,6 +18,7 @@ export default function Nav() {
         <Link href="/find" className="hover:text-accent">Зафиксировать удар</Link>
         <Link href="/errors" className="hover:text-accent">Мои ошибки</Link>
         <Link href="/exercises" className="hover:text-accent">База упражнений</Link>
+        <Link href="/profile" className="hover:text-accent">Профиль</Link>
       </div>
       <button onClick={handleLogout} className="text-white/60 hover:text-red-400 text-sm">
         Выйти

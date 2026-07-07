@@ -95,3 +95,24 @@ values
 ('Прямой удар на дальней дистанции', 'слабый_удар', 0, 10, 'far', 'straight_shot', 'Удар битком по прямой на дальнюю лузу с ровной силой', 20, '15/20 точных попаданий', 0.5),
 ('Резаный удар под острым углом', 'недокрут', 45, 70, 'close', 'angled_shot', 'Серия резаных ударов с контролем угла среза', 15, '12/15 попаданий', 0.7),
 ('Контроль выхода битка', 'плохой_выход', 0, 30, 'medium', 'position_play', 'После удара биток должен остановиться в заданной зоне', 12, '9/12 успешных выходов', 0.65);
+
+-- ============================================
+-- Профиль игрока: ФИО, фото, клуб, тренер, кий
+-- ============================================
+alter table profiles add column if not exists full_name text;
+alter table profiles add column if not exists avatar_url text;
+alter table profiles add column if not exists club text;
+alter table profiles add column if not exists coach text;
+alter table profiles add column if not exists cue text;
+
+-- Бакет для фото профиля
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+create policy "Users can upload own avatar" on storage.objects
+  for insert with check (bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]);
+create policy "Anyone can view avatars" on storage.objects
+  for select using (bucket_id = 'avatars');
+create policy "Users can update own avatar" on storage.objects
+  for update using (bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]);

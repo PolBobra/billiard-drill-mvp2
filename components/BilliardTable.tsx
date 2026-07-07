@@ -16,8 +16,7 @@ import {
   clamp,
   zoneBand,
   distToPolyline,
-  cueBallDirection,
-  buildBouncePath,
+  computeShotZone,
 } from '@/lib/shotGeometry';
 import TableFelt, { TableDefs, Pocket } from '@/components/TableFelt';
 
@@ -64,12 +63,7 @@ export default function BilliardTable({
   const zoneHalf = band ? band.width / 2 : 0;
   const zonePts =
     cueBall && objectBall && spinMarked && intended
-      ? (() => {
-          const dir = cueBallDirection(cueBall, objectBall, intended, spin, english);
-          if (!dir) return null;
-          const length = Math.max(340, 900 + spin * 240);
-          return buildBouncePath(objectBall, dir, length);
-        })()
+      ? computeShotZone({ cueBall, objectBall, intended, spinOffset: spin, englishOffset: english })?.pts ?? null
       : null;
 
   function toPoint(e: { clientX: number; clientY: number; currentTarget: SVGSVGElement }): Point {

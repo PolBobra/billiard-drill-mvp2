@@ -86,23 +86,28 @@ export function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-// Приблизительное направление битка ПОСЛЕ контакта с прицельным шаром.
-// null — прямой стан-удар (биток стоит на месте).
-export function cueBallDirection(
+// Направление И «сила» битка после контакта с прицельным шаром (правило
+// прямой линии: стан-удар уводит биток строго перпендикулярно пути прицельного
+// шара; накат/оттяжка добавляют продолжение вдоль этого пути).
+// power ~ 0..1.35: тонкий срез почти без наката — маленькая сила (короткий
+// скачок), толстый срез или сильный накат — большая (далёкий выход).
+// null — совсем прямой стан-удар в упор: биток замирает на месте.
+export function cueBallShot(
   cue: Point,
   obj: Point,
   target: Point,
   spinAmt: number,
   englishAmt: number
-): Point | null {
+): { dir: Point; power: number } | null {
   const aim = norm(sub(obj, cue));
   const objectDir = norm(sub(target, obj));
   const along = aim.x * objectDir.x + aim.y * objectDir.y;
   const tangent = { x: aim.x - along * objectDir.x, y: aim.y - along * objectDir.y };
   const forward = { x: objectDir.x * spinAmt * 0.9, y: objectDir.y * spinAmt * 0.9 };
   const raw = { x: tangent.x + forward.x, y: tangent.y + forward.y };
-  if (len(raw) < 0.02) return null;
-  return norm(rotate(norm(raw), englishAmt * 12));
+  const power = len(raw);
+  if (power < 0.02) return null;
+  return { dir: norm(rotate(norm(raw), englishAmt * 12)), power };
 }
 
 // Если шар долетает до лузы — считаем, что он в неё падает, а не отскакивает.
@@ -192,18 +197,29 @@ export type ShotDiagram = {
   cuePath?: Point[]; // нарисованная вручную траектория битка после удара
 };
 
+// Общий расчёт зоны полёта битка: точки пути + ширина полосы.
+// Длина пути зависит от «силы» удара (см. cueBallShot) — тонкий срез без
+// наката даёт короткий скачок, толстый срез или накат — далёкий выход.
+export function computeShotZone(
+  d: Pick<ShotDiagram, 'cueBall' | 'objectBall' | 'intended' | 'spinOffset' | 'englishOffset'>
+): { pts: Point[]; width: number } | null {
+  const shot = cueBallShot(d.cueBall, d.objectBall, d.intended, d.spinOffset, d.englishOffset);
+  if (!shot) return null;
+
+  const width = 42 + Math.abs(d.englishOffset) * 24;
+  const length = 90 + shot.power * (760 + d.spinOffset * 240);
+  const pts = buildBouncePath(d.objectBall, shot.dir, Math.max(70, length));
+  return { pts, width };
+}
+
 // Плавно затухающая «зона» полёта битка: единая линия с градиентом прозрачности
 // вдоль траектории (без «пузырей» из отдельных сегментов).
 export function zoneBand(
   d: Pick<ShotDiagram, 'cueBall' | 'objectBall' | 'intended' | 'spinOffset' | 'englishOffset'>
 ): { d: string; width: number; x1: number; y1: number; x2: number; y2: number } | null {
-  const dir = cueBallDirection(d.cueBall, d.objectBall, d.intended, d.spinOffset, d.englishOffset);
-  if (!dir) return null;
-
-  const width = 42 + Math.abs(d.englishOffset) * 24;
-  const length = Math.max(340, 900 + d.spinOffset * 240); // длинный полёт; накат ещё длиннее
-  const pts = buildBouncePath(d.objectBall, dir, length);
-  if (pts.length < 2) return null;
+  const zone = computeShotZone(d);
+  if (!zone || zone.pts.length < 2) return null;
+  const { pts, width } = zone;
 
   const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 
