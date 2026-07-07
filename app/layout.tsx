@@ -5,6 +5,11 @@ export const metadata = {
   description: 'Система тренировки бильярда с подбором упражнений',
 };
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ru">

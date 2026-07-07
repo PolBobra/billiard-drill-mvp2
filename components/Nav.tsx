@@ -12,8 +12,8 @@ export default function Nav() {
   }
 
   return (
-    <nav className="flex items-center justify-between bg-black/40 px-6 py-4">
-      <div className="flex gap-6 text-white/80">
+    <nav className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 bg-black/40 px-4 py-3 sm:px-6 sm:py-4">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm sm:text-base text-white/80">
         <Link href="/dashboard" className="hover:text-accent">Дашборд</Link>
         <Link href="/find" className="hover:text-accent">Зафиксировать удар</Link>
         <Link href="/errors" className="hover:text-accent">Мои ошибки</Link>

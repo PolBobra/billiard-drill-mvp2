@@ -58,7 +58,7 @@ export default function BilliardTable({
     }
   }
 
-  function toPoint(e: React.MouseEvent<SVGSVGElement>): Point {
+  function toPoint(e: { clientX: number; clientY: number; currentTarget: SVGSVGElement }): Point {
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * W;
@@ -169,15 +169,16 @@ export default function BilliardTable({
     pathRef.current = [...pathRef.current, p];
     setCuePath(pathRef.current);
   }
-  function pathDown(e: React.MouseEvent<SVGSVGElement>) {
+  function pathDown(e: React.PointerEvent<SVGSVGElement>) {
     if (!pathMode) return;
     e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId); // тянем даже если палец вышел за стол
     drawingRef.current = true;
     const p = toPoint(e);
     pathRef.current = inZone(p) ? [p] : [];
     setCuePath(pathRef.current);
   }
-  function pathMove(e: React.MouseEvent<SVGSVGElement>) {
+  function pathMove(e: React.PointerEvent<SVGSVGElement>) {
     if (!pathMode || !drawingRef.current) return;
     e.preventDefault();
     pushPoint(toPoint(e));
@@ -264,11 +265,11 @@ export default function BilliardTable({
       <svg
         viewBox={`0 0 ${W} ${H}`}
         onClick={tableClick}
-        onMouseDown={pathDown}
-        onMouseMove={pathMove}
-        onMouseUp={pathUp}
-        onMouseLeave={pathUp}
-        className="w-full rounded-xl"
+        onPointerDown={pathDown}
+        onPointerMove={pathMove}
+        onPointerUp={pathUp}
+        onPointerCancel={pathUp}
+        className="w-full rounded-xl select-none"
         style={{
           background: '#1b6b3a',
           border: '10px solid #6b3f1f',
