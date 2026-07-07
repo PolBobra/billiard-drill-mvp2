@@ -1,4 +1,5 @@
 import './globals.css';
+import Footer from '@/components/Footer';
 
 export const metadata = {
   title: 'Бильярд Тренер',
@@ -13,7 +14,10 @@ export const viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ru">
-      <body>{children}</body>
+      <body className="flex min-h-screen flex-col">
+        <div className="flex-1">{children}</div>
+        <Footer />
+      </body>
     </html>
   );
 }

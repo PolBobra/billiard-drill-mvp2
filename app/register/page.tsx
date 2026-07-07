@@ -9,24 +9,33 @@ export default function Register() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!agreed) return;
     setError('');
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { name } },
     });
-    setLoading(false);
     if (error) {
+      setLoading(false);
       setError(error.message);
-    } else {
-      router.push('/dashboard');
+      return;
     }
+    if (data.user) {
+      await supabase
+        .from('profiles')
+        .update({ terms_accepted_at: new Date().toISOString() })
+        .eq('id', data.user.id);
+    }
+    setLoading(false);
+    router.push('/dashboard');
   }
 
   return (
@@ -58,10 +67,31 @@ export default function Register() {
           required
           minLength={6}
         />
+
+        <label className="flex items-start gap-2 text-white/70 text-xs leading-relaxed">
+          <input
+            type="checkbox"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
+            className="mt-0.5 shrink-0"
+            required
+          />
+          <span>
+            Я согласен с{' '}
+            <Link href="/terms" target="_blank" className="text-accent hover:underline">
+              Пользовательским соглашением
+            </Link>{' '}
+            и{' '}
+            <Link href="/privacy" target="_blank" className="text-accent hover:underline">
+              Политикой конфиденциальности
+            </Link>
+          </span>
+        </label>
+
         {error && <p className="text-red-400 text-sm">{error}</p>}
         <button
-          disabled={loading}
-          className="w-full p-3 rounded-lg bg-accent text-black font-semibold hover:opacity-90"
+          disabled={loading || !agreed}
+          className="w-full p-3 rounded-lg bg-accent text-black font-semibold hover:opacity-90 disabled:opacity-50"
         >
           {loading ? 'Создаём…' : 'Создать аккаунт'}
         </button>

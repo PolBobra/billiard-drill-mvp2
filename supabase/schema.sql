@@ -116,3 +116,15 @@ create policy "Anyone can view avatars" on storage.objects
   for select using (bucket_id = 'avatars');
 create policy "Users can update own avatar" on storage.objects
   for update using (bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]);
+
+-- ============================================
+-- Согласие с пользовательским соглашением при регистрации
+-- ============================================
+alter table profiles add column if not exists terms_accepted_at timestamptz;
+
+-- ============================================
+-- Модерация: права администратора и пометка подозрительных аккаунтов
+-- ============================================
+alter table profiles add column if not exists is_admin boolean default false;
+alter table profiles add column if not exists flagged_suspicious boolean default false;
+-- Себе вручную проставить is_admin = true через Table Editor после выполнения этого блока.
