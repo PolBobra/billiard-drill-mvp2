@@ -105,7 +105,15 @@ export function cueBallDirection(
   return norm(rotate(norm(raw), englishAmt * 12));
 }
 
+// Если шар долетает до лузы — считаем, что он в неё падает, а не отскакивает.
+const POCKET_CAPTURE = POCKET_R + BALL_R + 4;
+function pocketAt(p: Point): Point | null {
+  for (const pk of POCKETS) if (len(sub(pk, p)) <= POCKET_CAPTURE) return pk;
+  return null;
+}
+
 // Траектория битка с отскоками от бортов до заданной длины.
+// Если по пути встречается луза — путь обрывается в ней (шар падает, дальше не летит).
 export function buildBouncePath(start: Point, dir: Point, length: number): Point[] {
   const pts: Point[] = [
     { x: clamp(start.x, BOUNDS.minX, BOUNDS.maxX), y: clamp(start.y, BOUNDS.minY, BOUNDS.maxY) },
@@ -113,6 +121,9 @@ export function buildBouncePath(start: Point, dir: Point, length: number): Point
   let pos = { ...pts[0] };
   let d = { ...dir };
   let remaining = length;
+
+  const startPocket = pocketAt(pos);
+  if (startPocket) return pts; // уже стоит в лузе — некуда лететь
 
   for (let i = 0; i < 12 && remaining > 0.5; i++) {
     let tx = Infinity;
@@ -130,6 +141,13 @@ export function buildBouncePath(start: Point, dir: Point, length: number): Point
     }
     pos = { x: pos.x + d.x * tHit, y: pos.y + d.y * tHit };
     pts.push({ ...pos });
+
+    const pk = pocketAt(pos);
+    if (pk) {
+      pts[pts.length - 1] = { ...pk }; // шар падает точно в центр лузы
+      break;
+    }
+
     if (Math.abs(tHit - tx) < 1e-4) d = { x: -d.x, y: d.y };
     if (Math.abs(tHit - ty) < 1e-4) d = { x: d.x, y: -d.y };
     remaining -= tHit;

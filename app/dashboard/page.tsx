@@ -65,14 +65,6 @@ export default function Dashboard() {
     );
   }
 
-  const skills = [
-    { label: 'Точность', value: profile?.accuracy ?? 50 },
-    { label: 'Сила удара', value: profile?.power_control ?? 50 },
-    { label: 'Контроль битка', value: profile?.cue_ball_control ?? 50 },
-    { label: 'Позиционирование', value: profile?.positioning ?? 50 },
-    { label: 'Стабильность', value: profile?.stability ?? 50 },
-  ];
-
   return (
     <main className="min-h-screen bg-felt2">
       <Nav />
@@ -90,18 +82,6 @@ export default function Dashboard() {
         >
           ⚡ Зафиксировать удар
         </button>
-
-        <div>
-          <h2 className="text-xl font-semibold text-white mb-3">Навыки</h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            {skills.map((s) => (
-              <div key={s.label} className="bg-black/30 p-4 rounded-xl text-center">
-                <div className="text-2xl font-bold text-accent">{s.value}</div>
-                <div className="text-white/60 text-sm">{s.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
 
         <div>
           <div className="flex items-center justify-between mb-3">

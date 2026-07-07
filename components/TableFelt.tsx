@@ -11,6 +11,11 @@ import {
   Point,
 } from '@/lib/shotGeometry';
 
+// Радиус скругления сукна у угловых луз и радиус выемки у средних —
+// чтобы сукно плавно уходило в лузу, а не упиралось в неё прямым углом.
+const CORNER_CUT = POCKET_R + 9;
+const MID_NOTCH = POCKET_R + 5;
+
 // Общие defs (градиенты дерева/сукна/поля/лузы). idPrefix делает id уникальными,
 // чтобы несколько столов на одной странице не конфликтовали.
 export function TableDefs({ idPrefix }: { idPrefix: string }) {
@@ -78,14 +83,19 @@ export default function TableFelt({ idPrefix }: { idPrefix: string }) {
         strokeWidth={5}
         opacity={0.55}
       />
-      {/* игровое поле */}
+      {/* игровое поле — скруглённые углы у угловых луз, чтобы сукно плавно
+          уходило в лузу вместо прямого угла */}
       <rect
         x={PLAY.minX}
         y={PLAY.minY}
         width={PLAY.maxX - PLAY.minX}
         height={PLAY.maxY - PLAY.minY}
+        rx={CORNER_CUT}
         fill={`url(#${idPrefix}-felt)`}
       />
+      {/* выемки в сукне под средние лузы (цвет борта, чтобы получился вырез) */}
+      <circle cx={W / 2} cy={PLAY.minY} r={MID_NOTCH} fill={`url(#${idPrefix}-rail)`} />
+      <circle cx={W / 2} cy={PLAY.maxY} r={MID_NOTCH} fill={`url(#${idPrefix}-rail)`} />
 
       {/* линия дома */}
       <line
