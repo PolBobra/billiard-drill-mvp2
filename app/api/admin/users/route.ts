@@ -23,7 +23,12 @@ export async function GET(req: Request) {
   }
 
   const infoById = new Map(
-    authData.users.map((u) => [u.id, { email: u.email ?? '', verified: !!u.email_confirmed_at }])
+    authData.users.map(
+      (u): [string, { email: string; verified: boolean }] => [
+        u.id,
+        { email: u.email ?? '', verified: !!u.email_confirmed_at },
+      ]
+    )
   );
 
   const users = (profiles || []).map((p) => ({
