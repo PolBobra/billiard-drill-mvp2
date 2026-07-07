@@ -162,21 +162,32 @@ export default function BilliardTable({
     else if (!actual) finalizeTarget('actual', p);
   }
 
+  // Точку удара по битку можно менять в любой момент (даже после того, как
+  // удар уже зафиксирован) — зона/линия полёта каждый раз пересчитывается
+  // от нового english/spin, а если диаграмма уже была отдана наружу — перевыдаём
+  // её заново с обновлёнными значениями.
+  function applySpin(nextEnglish: number, nextSpin: number) {
+    setEnglish(nextEnglish);
+    setSpin(nextSpin);
+    setSpinMarked(true);
+    if (baseDiagramRef.current) {
+      const updated = { ...baseDiagramRef.current, englishOffset: nextEnglish, spinOffset: nextSpin };
+      baseDiagramRef.current = updated;
+      onComplete({ ...updated, cuePath });
+    }
+  }
+
   function handleSpinClick(e: React.MouseEvent<SVGSVGElement>) {
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
     const x = e.clientX - rect.left - rect.width / 2;
     const y = e.clientY - rect.top - rect.height / 2;
     const r = rect.width / 2;
-    setEnglish(clamp(x / r, -1, 1));
-    setSpin(clamp(-y / r, -1, 1)); // вверх = накат (+), вниз = оттяжка (-)
-    setSpinMarked(true);
+    applySpin(clamp(x / r, -1, 1), clamp(-y / r, -1, 1)); // вверх = накат (+), вниз = оттяжка (-)
   }
 
   function skipSpin() {
-    setEnglish(0);
-    setSpin(0);
-    setSpinMarked(true);
+    applySpin(0, 0);
   }
 
   // ----- Перетаскивание шаров -----
@@ -406,8 +417,9 @@ export default function BilliardTable({
         {actual && <circle cx={actual.x} cy={actual.y} r={6} fill="#ff5d5d" stroke="#333" strokeWidth={1} pointerEvents="none" />}
       </svg>
 
-      {/* Селектор точки удара по битку (винт/накат/оттяжка) */}
-      {cueBall && objectBall && !spinMarked && (
+      {/* Селектор точки удара по битку (винт/накат/оттяжка) — можно менять
+          в любой момент, зона/линия полёта каждый раз пересчитывается заново */}
+      {cueBall && objectBall && (
         <div className="mt-4 flex items-center gap-4">
           <div>
             <p className="text-white/70 text-xs mb-2">Куда кием ударил по битку:</p>
@@ -421,6 +433,9 @@ export default function BilliardTable({
               <circle cx={55} cy={55} r={53} fill="none" stroke="#999" strokeWidth={1} />
               <line x1={55} y1={5} x2={55} y2={105} stroke="#ccc" strokeWidth={1} />
               <line x1={5} y1={55} x2={105} y2={55} stroke="#ccc" strokeWidth={1} />
+              {spinMarked && (
+                <circle cx={55 + english * 53} cy={55 - spin * 53} r={6} fill="#e0a93b" stroke="#333" strokeWidth={1} />
+              )}
             </svg>
           </div>
           <button type="button" onClick={skipSpin} className="text-white/70 text-sm underline hover:text-white">
