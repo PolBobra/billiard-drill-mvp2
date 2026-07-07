@@ -12,6 +12,7 @@ export default function Register() {
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [needsConfirmation, setNeedsConfirmation] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,6 +29,14 @@ export default function Register() {
       setError(error.message);
       return;
     }
+
+    if (!data.session) {
+      // Включено подтверждение почты — сессии ещё нет, аккаунт неактивен до перехода по ссылке.
+      setLoading(false);
+      setNeedsConfirmation(true);
+      return;
+    }
+
     if (data.user) {
       await supabase
         .from('profiles')
@@ -36,6 +45,23 @@ export default function Register() {
     }
     setLoading(false);
     router.push('/dashboard');
+  }
+
+  if (needsConfirmation) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-felt2 px-4">
+        <div className="bg-black/30 p-8 rounded-2xl w-full max-w-sm text-center space-y-4">
+          <h1 className="text-2xl font-bold text-accent">Почти готово!</h1>
+          <p className="text-white/80">
+            Регистрация прошла успешно! Проверь почту (включая папку «Спам») и перейди по ссылке
+            для подтверждения аккаунта.
+          </p>
+          <Link href="/login" className="inline-block text-accent hover:underline text-sm">
+            ← Назад ко входу
+          </Link>
+        </div>
+      </main>
+    );
   }
 
   return (
