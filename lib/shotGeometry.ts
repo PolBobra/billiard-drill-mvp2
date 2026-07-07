@@ -5,17 +5,55 @@ export type Point = { x: number; y: number };
 
 export const W = 800;
 export const H = 400;
-// границы, от которых отскакивает биток (внутренний край бортов)
-export const BOUNDS = { minX: 14, maxX: W - 14, minY: 14, maxY: H - 14 };
 
+// Конструкция стола (в координатах viewBox 0..W × 0..H):
+// внешняя деревянная рама → борт из сукна → игровая поверхность.
+export const FRAME = 9; // толщина деревянной рамы
+export const RAIL = 34; // ширина борта из сукна (его внутренний край = игровое поле)
+export const BALL_R = 11; // радиус шара
+export const POCKET_R = 19; // радиус лузы (впадины)
+
+// Игровое поле — по внутреннему краю бортов.
+export const PLAY = { minX: RAIL, minY: RAIL, maxX: W - RAIL, maxY: H - RAIL };
+export const PLAY_W = PLAY.maxX - PLAY.minX;
+export const PLAY_H = PLAY.maxY - PLAY.minY;
+
+// границы, от которых отскакивает биток (внутренний край бортов)
+export const BOUNDS = { minX: PLAY.minX, maxX: PLAY.maxX, minY: PLAY.minY, maxY: PLAY.maxY };
+
+// Лузы — в углах игрового поля и по центрам длинных бортов.
 export const POCKETS: Point[] = [
-  { x: 20, y: 20 },
-  { x: W / 2, y: 12 },
-  { x: W - 20, y: 20 },
-  { x: 20, y: H - 20 },
-  { x: W / 2, y: H - 12 },
-  { x: W - 20, y: H - 20 },
+  { x: PLAY.minX, y: PLAY.minY },
+  { x: W / 2, y: PLAY.minY },
+  { x: PLAY.maxX, y: PLAY.minY },
+  { x: PLAY.minX, y: PLAY.maxY },
+  { x: W / 2, y: PLAY.maxY },
+  { x: PLAY.maxX, y: PLAY.maxY },
 ];
+
+// Бриллианты (метки прицела) на бортах: по центральной линии сукна борта.
+const RAIL_MID = (FRAME + RAIL) / 2; // середина полосы сукна борта
+export const DIAMONDS: Point[] = [
+  // длинные борта (верх/низ) — по 3 с каждой стороны от центральной лузы
+  ...[1, 2, 3, 5, 6, 7].flatMap((i) => {
+    const x = PLAY.minX + (i / 8) * PLAY_W;
+    return [
+      { x, y: RAIL_MID },
+      { x, y: H - RAIL_MID },
+    ];
+  }),
+  // короткие борта (лево/право) — по 3
+  ...[1, 2, 3].flatMap((i) => {
+    const y = PLAY.minY + (i / 4) * PLAY_H;
+    return [
+      { x: RAIL_MID, y },
+      { x: W - RAIL_MID, y },
+    ];
+  }),
+];
+
+// Линия «дома» — на 1/4 длины стола от короткого борта.
+export const HEAD_X = PLAY.minX + PLAY_W * 0.25;
 
 export function sub(a: Point, b: Point): Point {
   return { x: a.x - b.x, y: a.y - b.y };
@@ -136,41 +174,30 @@ export type ShotDiagram = {
   cuePath?: Point[]; // нарисованная вручную траектория битка после удара
 };
 
-// Сегменты зоны с затуханием — общий расчёт для стола и просмотра.
-export function zoneSegments(
+// Плавно затухающая «зона» полёта битка: единая линия с градиентом прозрачности
+// вдоль траектории (без «пузырей» из отдельных сегментов).
+export function zoneBand(
   d: Pick<ShotDiagram, 'cueBall' | 'objectBall' | 'intended' | 'spinOffset' | 'englishOffset'>
-): { segments: { x1: number; y1: number; x2: number; y2: number; opacity: number }[]; width: number } {
-  const width = 40 + Math.abs(d.englishOffset) * 26;
+): { d: string; width: number; x1: number; y1: number; x2: number; y2: number } | null {
   const dir = cueBallDirection(d.cueBall, d.objectBall, d.intended, d.spinOffset, d.englishOffset);
-  if (!dir) return { segments: [], width };
+  if (!dir) return null;
 
-  const length = Math.max(200, 560 + d.spinOffset * 140);
+  const width = 42 + Math.abs(d.englishOffset) * 24;
+  const length = Math.max(340, 900 + d.spinOffset * 240); // длинный полёт; накат ещё длиннее
   const pts = buildBouncePath(d.objectBall, dir, length);
-  const total = polylineLength(pts);
-  const segments: { x1: number; y1: number; x2: number; y2: number; opacity: number }[] = [];
-  if (total <= 0) return { segments, width };
+  if (pts.length < 2) return null;
 
-  const step = 26;
-  let acc = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i];
-    const b = pts[i + 1];
-    const segLen = len(sub(b, a));
-    const u = norm(sub(b, a));
-    let t = 0;
-    while (t < segLen) {
-      const t2 = Math.min(t + step, segLen);
-      const prog = (acc + (t + t2) / 2) / total;
-      segments.push({
-        x1: a.x + u.x * t,
-        y1: a.y + u.y * t,
-        x2: a.x + u.x * t2,
-        y2: a.y + u.y * t2,
-        opacity: Math.max(0, 0.5 * (1 - prog)),
-      });
-      t = t2;
+  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+
+  // Ось градиента — от старта до самой удалённой точки траектории.
+  let far = pts[0];
+  let maxD = 0;
+  for (const p of pts) {
+    const dd = len(sub(p, pts[0]));
+    if (dd > maxD) {
+      maxD = dd;
+      far = p;
     }
-    acc += segLen;
   }
-  return { segments, width };
+  return { d: path, width, x1: pts[0].x, y1: pts[0].y, x2: far.x, y2: far.y };
 }

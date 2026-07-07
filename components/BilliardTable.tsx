@@ -1,30 +1,36 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import {
   Point,
   ShotDiagram,
   W,
   H,
+  PLAY,
   POCKETS,
+  BALL_R,
   sub,
   len,
   norm,
   signedAngleDeg,
   categorizeDistance,
   clamp,
+  zoneBand,
+  distToPolyline,
   cueBallDirection,
   buildBouncePath,
-  polylineLength,
-  distToPolyline,
 } from '@/lib/shotGeometry';
+import TableFelt, { TableDefs, Pocket } from '@/components/TableFelt';
 
 export type { ShotDiagram };
+
+type Drag = 'cue' | 'object' | 'position' | null;
 
 export default function BilliardTable({
   onComplete,
 }: {
   onComplete: (diagram: ShotDiagram) => void;
 }) {
+  const pfx = useId();
   const [cueBall, setCueBall] = useState<Point | null>(null);
   const [objectBall, setObjectBall] = useState<Point | null>(null);
   const [positionBall, setPositionBall] = useState<Point | null>(null);
@@ -42,21 +48,29 @@ export default function BilliardTable({
   const drawingRef = useRef(false);
   const baseDiagramRef = useRef<ShotDiagram | null>(null);
 
+  // Перетаскивание шаров до подтверждения точки
+  const dragRef = useRef<Drag>(null);
+  const didDragRef = useRef(false);
+
   const done = !!actual;
 
-  // ----- Геометрия зоны возможного полёта битка (с отскоками) -----
-  const zoneWidth = 40 + Math.abs(english) * 26;
-  const zoneHalf = zoneWidth / 2;
-  let zonePts: Point[] | null = null;
-  let zoneTotal = 0;
-  if (cueBall && objectBall && spinMarked && intended) {
-    const dir = cueBallDirection(cueBall, objectBall, intended, spin, english);
-    if (dir) {
-      const length = 560 + spin * 140; // длинная; накат ещё длиннее, оттяжка короче
-      zonePts = buildBouncePath(objectBall, dir, Math.max(200, length));
-      zoneTotal = polylineLength(zonePts);
-    }
-  }
+  // ----- Плавно затухающая зона возможного полёта битка (с отскоками) -----
+  const band =
+    cueBall && objectBall && spinMarked && intended
+      ? zoneBand({ cueBall, objectBall, intended, spinOffset: spin, englishOffset: english })
+      : null;
+
+  // полилиния зоны для ограничения ручного рисования
+  const zoneHalf = band ? band.width / 2 : 0;
+  const zonePts =
+    cueBall && objectBall && spinMarked && intended
+      ? (() => {
+          const dir = cueBallDirection(cueBall, objectBall, intended, spin, english);
+          if (!dir) return null;
+          const length = Math.max(340, 900 + spin * 240);
+          return buildBouncePath(objectBall, dir, length);
+        })()
+      : null;
 
   function toPoint(e: { clientX: number; clientY: number; currentTarget: SVGSVGElement }): Point {
     const svg = e.currentTarget;
@@ -66,9 +80,21 @@ export default function BilliardTable({
     return { x: Math.round(x), y: Math.round(y) };
   }
 
+  function clampPlay(p: Point): Point {
+    return {
+      x: clamp(p.x, PLAY.minX + BALL_R, PLAY.maxX - BALL_R),
+      y: clamp(p.y, PLAY.minY + BALL_R, PLAY.maxY - BALL_R),
+    };
+  }
+
   function tableClick(e: React.MouseEvent<SVGSVGElement>) {
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return; // это было перетаскивание, а не клик
+    }
     if (pathMode) return;
-    const point = toPoint(e);
+    const point = clampPlay(toPoint(e));
+    const raw = toPoint(e);
     if (!cueBall) return setCueBall(point);
     if (!objectBall) return setObjectBall(point);
     if (awaitingPositionBall && !positionBall) {
@@ -77,8 +103,9 @@ export default function BilliardTable({
       return;
     }
     if (!spinMarked) return;
-    if (!intended) return finalizeTarget('intended', point);
-    if (!actual) return finalizeTarget('actual', point);
+    // куда целился / куда покатился — можно и в борт, поэтому без зажатия к полю
+    if (!intended) return finalizeTarget('intended', raw);
+    if (!actual) return finalizeTarget('actual', raw);
   }
 
   function finalizeTarget(kind: 'intended' | 'actual', point: Point) {
@@ -157,6 +184,17 @@ export default function BilliardTable({
     setSpinMarked(true);
   }
 
+  // ----- Перетаскивание шаров -----
+  function ballDown(kind: Exclude<Drag, null>) {
+    return (e: React.PointerEvent<SVGCircleElement>) => {
+      if (pathMode || done) return; // не двигаем после завершения удара / в режиме рисования
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      dragRef.current = kind;
+      didDragRef.current = false;
+    };
+  }
+
   // ----- Ручное рисование траектории битка (только внутри зоны) -----
   function inZone(p: Point) {
     if (!zonePts) return true; // зоны нет (прямой удар) — рисуем свободно
@@ -169,7 +207,8 @@ export default function BilliardTable({
     pathRef.current = [...pathRef.current, p];
     setCuePath(pathRef.current);
   }
-  function pathDown(e: React.PointerEvent<SVGSVGElement>) {
+
+  function pointerDown(e: React.PointerEvent<SVGSVGElement>) {
     if (!pathMode) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture?.(e.pointerId); // тянем даже если палец вышел за стол
@@ -178,12 +217,25 @@ export default function BilliardTable({
     pathRef.current = inZone(p) ? [p] : [];
     setCuePath(pathRef.current);
   }
-  function pathMove(e: React.PointerEvent<SVGSVGElement>) {
+  function pointerMove(e: React.PointerEvent<SVGSVGElement>) {
+    if (dragRef.current) {
+      e.preventDefault();
+      didDragRef.current = true;
+      const p = clampPlay(toPoint(e));
+      if (dragRef.current === 'cue') setCueBall(p);
+      else if (dragRef.current === 'object') setObjectBall(p);
+      else setPositionBall(p);
+      return;
+    }
     if (!pathMode || !drawingRef.current) return;
     e.preventDefault();
     pushPoint(toPoint(e));
   }
-  function pathUp() {
+  function pointerUp() {
+    if (dragRef.current) {
+      dragRef.current = null;
+      return;
+    }
     if (!drawingRef.current) return;
     drawingRef.current = false;
     emitWithPath(pathRef.current);
@@ -209,45 +261,20 @@ export default function BilliardTable({
     setPathMode(false);
     pathRef.current = [];
     drawingRef.current = false;
+    dragRef.current = null;
     baseDiagramRef.current = null;
     setCuePath([]);
   }
 
-  // сегменты зоны с затуханием к концу траектории
-  const segs: { x1: number; y1: number; x2: number; y2: number; opacity: number }[] = [];
-  if (zonePts && zoneTotal > 0) {
-    const step = 26;
-    let acc = 0;
-    for (let i = 0; i < zonePts.length - 1; i++) {
-      const a = zonePts[i];
-      const b = zonePts[i + 1];
-      const segLen = len(sub(b, a));
-      const dir = norm(sub(b, a));
-      let t = 0;
-      while (t < segLen) {
-        const t2 = Math.min(t + step, segLen);
-        const prog = (acc + (t + t2) / 2) / zoneTotal;
-        segs.push({
-          x1: a.x + dir.x * t,
-          y1: a.y + dir.y * t,
-          x2: a.x + dir.x * t2,
-          y2: a.y + dir.y * t2,
-          opacity: Math.max(0, 0.5 * (1 - prog)),
-        });
-        t = t2;
-      }
-      acc += segLen;
-    }
-  }
-
   const cuePathD = cuePath.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  const canDrag = !pathMode && !done;
 
   const instructions = !cueBall
     ? '1. Кликни на стол — где стоит биток (белый шар)'
     : !objectBall
     ? '2. Кликни — где стоит прицельный шар'
     : !spinMarked
-    ? '3. Отметь точку удара по битку ниже (винт/накат/оттяжка), либо нажми «Бил в центр»'
+    ? '3. Отметь точку удара по битку ниже (винт/накат/оттяжка), либо нажми «Бил в центр». Шары можно перетаскивать.'
     : awaitingPositionBall
     ? '(опционально) Кликни на стол — где шар, на который хочешь выйти'
     : !intended
@@ -265,48 +292,48 @@ export default function BilliardTable({
       <svg
         viewBox={`0 0 ${W} ${H}`}
         onClick={tableClick}
-        onPointerDown={pathDown}
-        onPointerMove={pathMove}
-        onPointerUp={pathUp}
-        onPointerCancel={pathUp}
-        className="w-full rounded-xl select-none"
+        onPointerDown={pointerDown}
+        onPointerMove={pointerMove}
+        onPointerUp={pointerUp}
+        onPointerCancel={pointerUp}
+        className="w-full rounded-2xl select-none"
         style={{
-          background: '#1b6b3a',
-          border: '10px solid #6b3f1f',
           cursor: pathMode || !done ? 'crosshair' : 'default',
-          touchAction: pathMode ? 'none' : 'auto',
+          touchAction: pathMode || canDrag ? 'none' : 'auto',
         }}
       >
-        {/* Зона возможной траектории битка (длинная, с отскоками, затухает) */}
-        {segs.map((s, i) => (
-          <line
-            key={i}
-            x1={s.x1}
-            y1={s.y1}
-            x2={s.x2}
-            y2={s.y2}
-            stroke="#3ea6ff"
-            strokeWidth={zoneWidth}
-            strokeLinecap="round"
-            opacity={s.opacity}
-          />
-        ))}
+        <TableDefs idPrefix={pfx} />
 
-        {POCKETS.map((p, i) => (
-          <circle
-            key={i}
-            cx={p.x}
-            cy={p.y}
-            r={14}
-            fill="#e0a93b"
-            opacity={actual ? 0.4 : 0.9}
-            onClick={(e) => {
-              e.stopPropagation();
-              handlePocketClick(p);
-            }}
-            style={{ cursor: !pathMode && spinMarked && !actual ? 'pointer' : 'default' }}
+        {/* градиент затухания зоны */}
+        {band && (
+          <defs>
+            <linearGradient
+              id={`${pfx}-zone`}
+              gradientUnits="userSpaceOnUse"
+              x1={band.x1}
+              y1={band.y1}
+              x2={band.x2}
+              y2={band.y2}
+            >
+              <stop offset="0" stopColor="#3ea6ff" stopOpacity={0.55} />
+              <stop offset="1" stopColor="#3ea6ff" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+        )}
+
+        <TableFelt idPrefix={pfx} />
+
+        {/* Зона возможной траектории битка (длинная, с отскоками, плавно затухает) */}
+        {band && (
+          <path
+            d={band.d}
+            fill="none"
+            stroke={`url(#${pfx}-zone)`}
+            strokeWidth={band.width}
+            strokeLinecap="round"
+            strokeLinejoin="round"
           />
-        ))}
+        )}
 
         {/* Линия удара: биток -> прицельный шар */}
         {cueBall && objectBall && (
@@ -326,11 +353,58 @@ export default function BilliardTable({
           <path d={cuePathD} fill="none" stroke="#38f9d7" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
         )}
 
-        {positionBall && <circle cx={positionBall.x} cy={positionBall.y} r={10} fill="#ffe14d" stroke="#333" strokeWidth={1.5} />}
-        {cueBall && <circle cx={cueBall.x} cy={cueBall.y} r={10} fill="white" stroke="#333" strokeWidth={1.5} />}
-        {objectBall && <circle cx={objectBall.x} cy={objectBall.y} r={10} fill="#d64545" stroke="#333" strokeWidth={1.5} />}
-        {intended && <circle cx={intended.x} cy={intended.y} r={6} fill="#e0a93b" stroke="#333" strokeWidth={1} />}
-        {actual && <circle cx={actual.x} cy={actual.y} r={6} fill="#ff5d5d" stroke="#333" strokeWidth={1} />}
+        {/* Впалые лузы (кликабельны как цель) */}
+        {POCKETS.map((p, i) => (
+          <g
+            key={i}
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePocketClick(p);
+            }}
+            style={{ cursor: !pathMode && spinMarked && !actual ? 'pointer' : 'default' }}
+          >
+            <Pocket p={p} idPrefix={pfx} />
+          </g>
+        ))}
+
+        {positionBall && (
+          <circle
+            cx={positionBall.x}
+            cy={positionBall.y}
+            r={BALL_R}
+            fill="#ffe14d"
+            stroke="#333"
+            strokeWidth={1.5}
+            onPointerDown={ballDown('position')}
+            style={{ cursor: canDrag ? 'grab' : 'default' }}
+          />
+        )}
+        {cueBall && (
+          <circle
+            cx={cueBall.x}
+            cy={cueBall.y}
+            r={BALL_R}
+            fill="white"
+            stroke="#333"
+            strokeWidth={1.5}
+            onPointerDown={ballDown('cue')}
+            style={{ cursor: canDrag ? 'grab' : 'default' }}
+          />
+        )}
+        {objectBall && (
+          <circle
+            cx={objectBall.x}
+            cy={objectBall.y}
+            r={BALL_R}
+            fill="#d64545"
+            stroke="#333"
+            strokeWidth={1.5}
+            onPointerDown={ballDown('object')}
+            style={{ cursor: canDrag ? 'grab' : 'default' }}
+          />
+        )}
+        {intended && <circle cx={intended.x} cy={intended.y} r={6} fill="#e0a93b" stroke="#333" strokeWidth={1} pointerEvents="none" />}
+        {actual && <circle cx={actual.x} cy={actual.y} r={6} fill="#ff5d5d" stroke="#333" strokeWidth={1} pointerEvents="none" />}
       </svg>
 
       {/* Селектор точки удара по битку (винт/накат/оттяжка) */}
