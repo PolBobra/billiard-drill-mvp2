@@ -41,6 +41,7 @@ create table if not exists shot_logs (
   distance text,
   matched_exercise_id uuid references exercises(id),
   completed boolean default false,
+  diagram jsonb,                   -- сохранённый рисунок удара (стол, шары, траектории)
   created_at timestamptz default now()
 );
 

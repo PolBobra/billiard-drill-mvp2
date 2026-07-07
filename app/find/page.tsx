@@ -47,6 +47,7 @@ export default function FindExercise() {
         angle: diagram.intendedAngle,
         distance: diagram.distance,
         matched_exercise_id: exercise?.id ?? null,
+        diagram: diagram,
       });
       await recomputeSkills(userId);
     }

@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { errorLabel } from '@/lib/errorTypes';
+import { ShotDiagram } from '@/lib/shotGeometry';
+import ShotDiagramView from '@/components/ShotDiagramView';
 import Nav from '@/components/Nav';
 
 type ShotLog = {
@@ -12,6 +14,7 @@ type ShotLog = {
   distance: string;
   completed: boolean;
   created_at: string;
+  diagram: ShotDiagram | null;
   exercises: { name: string } | null;
 };
 
@@ -25,6 +28,7 @@ export default function MyErrors() {
   const router = useRouter();
   const [logs, setLogs] = useState<ShotLog[]>([]);
   const [filter, setFilter] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -38,7 +42,7 @@ export default function MyErrors() {
 
       const { data } = await supabase
         .from('shot_logs')
-        .select('id, error_type, angle, distance, completed, created_at, exercises(name)')
+        .select('id, error_type, angle, distance, completed, created_at, diagram, exercises(name)')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
@@ -81,23 +85,44 @@ export default function MyErrors() {
           <p className="text-white/60">Пока нет зафиксированных ударов — начни с «Зафиксировать удар».</p>
         ) : (
           <div className="space-y-2">
-            {filtered.map((log) => (
-              <div key={log.id} className="bg-black/30 p-4 rounded-xl flex items-center justify-between">
-                <div>
-                  <div className="text-white font-medium">{errorLabel(log.error_type)}</div>
-                  <div className="text-white/50 text-sm">
-                    Угол {log.angle}° · {DISTANCE_LABELS[log.distance] || log.distance} ·{' '}
-                    {new Date(log.created_at).toLocaleString('ru-RU')}
-                  </div>
-                  {log.exercises?.name && (
-                    <div className="text-accent text-sm mt-1">Упражнение: {log.exercises.name}</div>
+            {filtered.map((log) => {
+              const open = openId === log.id;
+              return (
+                <div key={log.id} className="bg-black/30 rounded-xl overflow-hidden">
+                  <button
+                    onClick={() => setOpenId(open ? null : log.id)}
+                    className="w-full p-4 flex items-center justify-between text-left hover:bg-white/5"
+                  >
+                    <div>
+                      <div className="text-white font-medium">{errorLabel(log.error_type)}</div>
+                      <div className="text-white/50 text-sm">
+                        Угол {log.angle}° · {DISTANCE_LABELS[log.distance] || log.distance} ·{' '}
+                        {new Date(log.created_at).toLocaleString('ru-RU')}
+                      </div>
+                      {log.exercises?.name && (
+                        <div className="text-accent text-sm mt-1">Упражнение: {log.exercises.name}</div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className={`text-xs px-3 py-1 rounded-full ${log.completed ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                        {log.completed ? 'выполнено' : 'в работе'}
+                      </span>
+                      <span className="text-white/40 text-sm">{open ? '▲' : '▼'}</span>
+                    </div>
+                  </button>
+
+                  {open && (
+                    <div className="px-4 pb-4">
+                      {log.diagram ? (
+                        <ShotDiagramView d={log.diagram} />
+                      ) : (
+                        <p className="text-white/40 text-sm">Для этой ошибки рисунок не сохранён.</p>
+                      )}
+                    </div>
                   )}
                 </div>
-                <span className={`text-xs px-3 py-1 rounded-full ${log.completed ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
-                  {log.completed ? 'выполнено' : 'в работе'}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

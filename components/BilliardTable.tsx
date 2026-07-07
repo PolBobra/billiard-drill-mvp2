@@ -1,141 +1,24 @@
 'use client';
 import { useRef, useState } from 'react';
+import {
+  Point,
+  ShotDiagram,
+  W,
+  H,
+  POCKETS,
+  sub,
+  len,
+  norm,
+  signedAngleDeg,
+  categorizeDistance,
+  clamp,
+  cueBallDirection,
+  buildBouncePath,
+  polylineLength,
+  distToPolyline,
+} from '@/lib/shotGeometry';
 
-type Point = { x: number; y: number };
-
-export type ShotDiagram = {
-  cueBall: Point;
-  objectBall: Point;
-  positionBall: Point | null;
-  englishOffset: number; // -1..1, боковой винт (лево/право)
-  spinOffset: number; // -1..1, верх/низ (накат/оттяжка)
-  intended: Point;
-  actual: Point;
-  intendedAngle: number;
-  actualAngle: number;
-  deviation: number;
-  suggestedError: 'недокрут' | 'перекрут' | null;
-  distance: 'close' | 'medium' | 'far';
-  distancePx: number;
-};
-
-const W = 800;
-const H = 400;
-// границы, от которых биток отскакивает (внутренний край бортов)
-const BOUNDS = { minX: 14, maxX: W - 14, minY: 14, maxY: H - 14 };
-
-const POCKETS: Point[] = [
-  { x: 20, y: 20 },
-  { x: W / 2, y: 12 },
-  { x: W - 20, y: 20 },
-  { x: 20, y: H - 20 },
-  { x: W / 2, y: H - 12 },
-  { x: W - 20, y: H - 20 },
-];
-
-function sub(a: Point, b: Point): Point {
-  return { x: a.x - b.x, y: a.y - b.y };
-}
-function len(v: Point) {
-  return Math.hypot(v.x, v.y);
-}
-function norm(v: Point): Point {
-  const l = len(v) || 1;
-  return { x: v.x / l, y: v.y / l };
-}
-function rotate(v: Point, deg: number): Point {
-  const rad = (deg * Math.PI) / 180;
-  return {
-    x: v.x * Math.cos(rad) - v.y * Math.sin(rad),
-    y: v.x * Math.sin(rad) + v.y * Math.cos(rad),
-  };
-}
-function signedAngleDeg(v1: Point, v2: Point) {
-  const cross = v1.x * v2.y - v1.y * v2.x;
-  const dot = v1.x * v2.x + v1.y * v2.y;
-  return (Math.atan2(cross, dot) * 180) / Math.PI;
-}
-function categorizeDistance(px: number): 'close' | 'medium' | 'far' {
-  if (px < 150) return 'close';
-  if (px < 350) return 'medium';
-  return 'far';
-}
-function clamp(v: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, v));
-}
-
-// Приблизительное направление битка ПОСЛЕ контакта с прицельным шаром.
-//  - прицельный шар катится к цели (линия центров);
-//  - биток без винта уходит по касательной (перпендикуляр к ходу шара);
-//  - накат (spin > 0) доворачивает вперёд по ходу, оттяжка (spin < 0) — назад;
-//  - боковой винт слегка доворачивает вбок.
-// null — прямой стан-удар: биток стоит на месте.
-function cueBallDirection(
-  cue: Point,
-  obj: Point,
-  target: Point,
-  spinAmt: number,
-  englishAmt: number
-): Point | null {
-  const aim = norm(sub(obj, cue));
-  const objectDir = norm(sub(target, obj));
-  const along = aim.x * objectDir.x + aim.y * objectDir.y;
-  const tangent = { x: aim.x - along * objectDir.x, y: aim.y - along * objectDir.y };
-  const forward = { x: objectDir.x * spinAmt * 0.9, y: objectDir.y * spinAmt * 0.9 };
-  const raw = { x: tangent.x + forward.x, y: tangent.y + forward.y };
-  if (len(raw) < 0.02) return null;
-  return norm(rotate(norm(raw), englishAmt * 12));
-}
-
-// Строит траекторию битка с отскоками от бортов до заданной длины.
-function buildBouncePath(start: Point, dir: Point, length: number): Point[] {
-  const pts: Point[] = [{ x: clamp(start.x, BOUNDS.minX, BOUNDS.maxX), y: clamp(start.y, BOUNDS.minY, BOUNDS.maxY) }];
-  let pos = { ...pts[0] };
-  let d = { ...dir };
-  let remaining = length;
-
-  for (let i = 0; i < 12 && remaining > 0.5; i++) {
-    let tx = Infinity;
-    let ty = Infinity;
-    if (d.x > 1e-6) tx = (BOUNDS.maxX - pos.x) / d.x;
-    else if (d.x < -1e-6) tx = (BOUNDS.minX - pos.x) / d.x;
-    if (d.y > 1e-6) ty = (BOUNDS.maxY - pos.y) / d.y;
-    else if (d.y < -1e-6) ty = (BOUNDS.minY - pos.y) / d.y;
-
-    const tHit = Math.min(tx, ty);
-    if (!isFinite(tHit) || tHit >= remaining) {
-      pos = { x: pos.x + d.x * remaining, y: pos.y + d.y * remaining };
-      pts.push({ ...pos });
-      break;
-    }
-    pos = { x: pos.x + d.x * tHit, y: pos.y + d.y * tHit };
-    pts.push({ ...pos });
-    if (Math.abs(tHit - tx) < 1e-4) d = { x: -d.x, y: d.y }; // отскок от боковой стенки
-    if (Math.abs(tHit - ty) < 1e-4) d = { x: d.x, y: -d.y }; // отскок от верх/низ
-    remaining -= tHit;
-  }
-  return pts;
-}
-
-function polylineLength(pts: Point[]) {
-  let total = 0;
-  for (let i = 0; i < pts.length - 1; i++) total += len(sub(pts[i + 1], pts[i]));
-  return total;
-}
-
-function pointToSeg(p: Point, a: Point, b: Point): number {
-  const abx = b.x - a.x;
-  const aby = b.y - a.y;
-  const ab2 = abx * abx + aby * aby || 1;
-  let t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / ab2;
-  t = clamp(t, 0, 1);
-  return Math.hypot(p.x - (a.x + abx * t), p.y - (a.y + aby * t));
-}
-function distToPolyline(p: Point, pts: Point[]): number {
-  let m = Infinity;
-  for (let i = 0; i < pts.length - 1; i++) m = Math.min(m, pointToSeg(p, pts[i], pts[i + 1]));
-  return m;
-}
+export type { ShotDiagram };
 
 export default function BilliardTable({
   onComplete,
@@ -157,6 +40,7 @@ export default function BilliardTable({
   const [cuePath, setCuePath] = useState<Point[]>([]);
   const pathRef = useRef<Point[]>([]);
   const drawingRef = useRef(false);
+  const baseDiagramRef = useRef<ShotDiagram | null>(null);
 
   const done = !!actual;
 
@@ -223,7 +107,7 @@ export default function BilliardTable({
 
     const distancePx = len(sub(obj, cue));
 
-    onComplete({
+    const diagram: ShotDiagram = {
       cueBall: cue,
       objectBall: obj,
       positionBall,
@@ -237,7 +121,16 @@ export default function BilliardTable({
       suggestedError,
       distance: categorizeDistance(distancePx),
       distancePx: Math.round(distancePx),
-    });
+      cuePath: [],
+    };
+    baseDiagramRef.current = diagram;
+    onComplete(diagram);
+  }
+
+  // Пере-отдаём диаграмму с обновлённой нарисованной траекторией
+  function emitWithPath(path: Point[]) {
+    if (!baseDiagramRef.current) return;
+    onComplete({ ...baseDiagramRef.current, cuePath: path });
   }
 
   function handlePocketClick(p: Point) {
@@ -290,13 +183,16 @@ export default function BilliardTable({
     pushPoint(toPoint(e));
   }
   function pathUp() {
+    if (!drawingRef.current) return;
     drawingRef.current = false;
+    emitWithPath(pathRef.current);
   }
   function redrawPath() {
     pathRef.current = [];
     drawingRef.current = false;
     setCuePath([]);
     setPathMode(true);
+    emitWithPath([]);
   }
 
   function reset() {
@@ -312,11 +208,12 @@ export default function BilliardTable({
     setPathMode(false);
     pathRef.current = [];
     drawingRef.current = false;
+    baseDiagramRef.current = null;
     setCuePath([]);
   }
 
   // сегменты зоны с затуханием к концу траектории
-  const zoneSegments: { x1: number; y1: number; x2: number; y2: number; opacity: number }[] = [];
+  const segs: { x1: number; y1: number; x2: number; y2: number; opacity: number }[] = [];
   if (zonePts && zoneTotal > 0) {
     const step = 26;
     let acc = 0;
@@ -329,7 +226,7 @@ export default function BilliardTable({
       while (t < segLen) {
         const t2 = Math.min(t + step, segLen);
         const prog = (acc + (t + t2) / 2) / zoneTotal;
-        zoneSegments.push({
+        segs.push({
           x1: a.x + dir.x * t,
           y1: a.y + dir.y * t,
           x2: a.x + dir.x * t2,
@@ -380,7 +277,7 @@ export default function BilliardTable({
         }}
       >
         {/* Зона возможной траектории битка (длинная, с отскоками, затухает) */}
-        {zoneSegments.map((s, i) => (
+        {segs.map((s, i) => (
           <line
             key={i}
             x1={s.x1}
