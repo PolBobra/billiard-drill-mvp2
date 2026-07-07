@@ -17,6 +17,7 @@ import {
   zoneBand,
   distToPolyline,
   computeShotZone,
+  resolveBallOverlap,
 } from '@/lib/shotGeometry';
 import TableFelt, { TableDefs, Pocket } from '@/components/TableFelt';
 
@@ -90,9 +91,9 @@ export default function BilliardTable({
     const point = clampPlay(toPoint(e));
     const raw = toPoint(e);
     if (!cueBall) return setCueBall(point);
-    if (!objectBall) return setObjectBall(point);
+    if (!objectBall) return setObjectBall(resolveBallOverlap(point, [cueBall]));
     if (awaitingPositionBall && !positionBall) {
-      setPositionBall(point);
+      setPositionBall(resolveBallOverlap(point, [cueBall, objectBall]));
       setAwaitingPositionBall(false);
       return;
     }
@@ -216,9 +217,13 @@ export default function BilliardTable({
       e.preventDefault();
       didDragRef.current = true;
       const p = clampPlay(toPoint(e));
-      if (dragRef.current === 'cue') setCueBall(p);
-      else if (dragRef.current === 'object') setObjectBall(p);
-      else setPositionBall(p);
+      if (dragRef.current === 'cue') {
+        setCueBall(clampPlay(resolveBallOverlap(p, [objectBall, positionBall])));
+      } else if (dragRef.current === 'object') {
+        setObjectBall(clampPlay(resolveBallOverlap(p, [cueBall, positionBall])));
+      } else {
+        setPositionBall(clampPlay(resolveBallOverlap(p, [cueBall, objectBall])));
+      }
       return;
     }
     if (!pathMode || !drawingRef.current) return;

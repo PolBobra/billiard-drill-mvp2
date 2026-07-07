@@ -10,7 +10,7 @@ type AdminUser = {
   full_name: string | null;
   club_name: string | null;
   club_city: string | null;
-  coach: string | null;
+  coach_name: string | null;
   cue: string | null;
   created_at: string;
   is_admin: boolean;
@@ -19,8 +19,9 @@ type AdminUser = {
   verified: boolean;
 };
 
-type ClubRequest = {
+type AdditionRequest = {
   id: string;
+  type: 'club' | 'coach';
   name: string;
   city: string | null;
   status: string;
@@ -29,16 +30,17 @@ type ClubRequest = {
 
 export default function AdminPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<'users' | 'clubRequests'>('users');
+  const [tab, setTab] = useState<'users' | 'requests'>('users');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const [clubRequests, setClubRequests] = useState<ClubRequest[]>([]);
-  const [clubRequestsLoaded, setClubRequestsLoaded] = useState(false);
-  const [clubRequestsError, setClubRequestsError] = useState('');
+  const [requests, setRequests] = useState<AdditionRequest[]>([]);
+  const [requestsLoaded, setRequestsLoaded] = useState(false);
+  const [requestsError, setRequestsError] = useState('');
+  const [requestTypeFilter, setRequestTypeFilter] = useState<'club' | 'coach'>('club');
   const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
 
   async function authHeader() {
@@ -79,29 +81,29 @@ export default function AdminPage() {
   }, [router]);
 
   useEffect(() => {
-    if (tab !== 'clubRequests' || clubRequestsLoaded) return;
-    async function loadClubRequests() {
-      const res = await fetch('/api/admin/club-requests', { headers: await authHeader() });
+    if (tab !== 'requests' || requestsLoaded) return;
+    async function loadRequests() {
+      const res = await fetch('/api/admin/addition-requests', { headers: await authHeader() });
       const json = await res.json();
       if (!res.ok) {
-        setClubRequestsError(json.error || 'Не удалось загрузить заявки');
+        setRequestsError(json.error || 'Не удалось загрузить заявки');
       } else {
-        setClubRequests(json.requests);
+        setRequests(json.requests);
       }
-      setClubRequestsLoaded(true);
+      setRequestsLoaded(true);
     }
-    loadClubRequests();
-  }, [tab, clubRequestsLoaded]);
+    loadRequests();
+  }, [tab, requestsLoaded]);
 
-  async function resolveClubRequest(id: string, action: 'approve' | 'reject') {
+  async function resolveRequest(id: string, action: 'approve' | 'reject') {
     setBusyRequestId(id);
-    const res = await fetch('/api/admin/club-requests', {
+    const res = await fetch('/api/admin/addition-requests', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
       body: JSON.stringify({ id, action }),
     });
     if (res.ok) {
-      setClubRequests((prev) => prev.filter((r) => r.id !== id));
+      setRequests((prev) => prev.filter((r) => r.id !== id));
     } else {
       const json = await res.json().catch(() => ({}));
       alert(json.error || 'Не удалось обработать заявку');
@@ -152,9 +154,14 @@ export default function AdminPage() {
     ? users.filter(
         (u) =>
           (u.full_name || u.name || '').toLowerCase().includes(q) ||
-          u.email.toLowerCase().includes(q)
+          u.email.toLowerCase().includes(q) ||
+          (u.coach_name || '').toLowerCase().includes(q)
       )
     : users;
+
+  const visibleRequests = requests.filter((r) => r.type === requestTypeFilter);
+  const pendingClubCount = requests.filter((r) => r.type === 'club').length;
+  const pendingCoachCount = requests.filter((r) => r.type === 'coach').length;
 
   return (
     <main className="min-h-screen bg-felt2">
@@ -170,10 +177,10 @@ export default function AdminPage() {
             Пользователи
           </button>
           <button
-            onClick={() => setTab('clubRequests')}
-            className={`px-4 py-2 rounded-full text-sm ${tab === 'clubRequests' ? 'bg-accent text-black' : 'bg-white/10 text-white/70'}`}
+            onClick={() => setTab('requests')}
+            className={`px-4 py-2 rounded-full text-sm ${tab === 'requests' ? 'bg-accent text-black' : 'bg-white/10 text-white/70'}`}
           >
-            Заявки на клубы{clubRequestsLoaded && clubRequests.length > 0 ? ` (${clubRequests.length})` : ''}
+            Заявки{requestsLoaded && requests.length > 0 ? ` (${requests.length})` : ''}
           </button>
         </div>
 
@@ -183,7 +190,7 @@ export default function AdminPage() {
 
             <input
               type="text"
-              placeholder="Поиск по имени или email…"
+              placeholder="Поиск по имени, email или тренеру…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full max-w-md mb-6 p-3 rounded-lg bg-white/10 text-white placeholder-white/50"
@@ -212,7 +219,7 @@ export default function AdminPage() {
                       <td className="p-3">
                         {u.club_name ? `${u.club_name}${u.club_city ? `, ${u.club_city}` : ''}` : '—'}
                       </td>
-                      <td className="p-3">{u.coach || '—'}</td>
+                      <td className="p-3">{u.coach_name || '—'}</td>
                       <td className="p-3">{u.cue || '—'}</td>
                       <td className="p-3">{new Date(u.created_at).toLocaleDateString('ru-RU')}</td>
                       <td className="p-3">{u.verified ? 'да' : 'нет'}</td>
@@ -250,35 +257,51 @@ export default function AdminPage() {
           </>
         )}
 
-        {tab === 'clubRequests' && (
+        {tab === 'requests' && (
           <>
-            {clubRequestsError && <p className="text-red-400 mb-4">{clubRequestsError}</p>}
+            {requestsError && <p className="text-red-400 mb-4">{requestsError}</p>}
+
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setRequestTypeFilter('club')}
+                className={`px-4 py-2 rounded-full text-sm ${requestTypeFilter === 'club' ? 'bg-accent text-black' : 'bg-white/10 text-white/70'}`}
+              >
+                Клубы ({pendingClubCount})
+              </button>
+              <button
+                onClick={() => setRequestTypeFilter('coach')}
+                className={`px-4 py-2 rounded-full text-sm ${requestTypeFilter === 'coach' ? 'bg-accent text-black' : 'bg-white/10 text-white/70'}`}
+              >
+                Тренеры ({pendingCoachCount})
+              </button>
+            </div>
+
             <div className="overflow-x-auto bg-black/30 rounded-2xl">
               <table className="w-full text-sm text-left text-white/80">
                 <thead className="text-white/50 border-b border-white/10">
                   <tr>
                     <th className="p-3">Название</th>
-                    <th className="p-3">Город</th>
+                    {requestTypeFilter === 'club' && <th className="p-3">Город</th>}
                     <th className="p-3">Дата заявки</th>
                     <th className="p-3">Действия</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {clubRequests.map((r) => (
+                  {visibleRequests.map((r) => (
                     <tr key={r.id} className="border-b border-white/5 last:border-0">
                       <td className="p-3">{r.name}</td>
-                      <td className="p-3">{r.city || '—'}</td>
+                      {requestTypeFilter === 'club' && <td className="p-3">{r.city || '—'}</td>}
                       <td className="p-3">{new Date(r.created_at).toLocaleDateString('ru-RU')}</td>
                       <td className="p-3 whitespace-nowrap space-x-2">
                         <button
-                          onClick={() => resolveClubRequest(r.id, 'approve')}
+                          onClick={() => resolveRequest(r.id, 'approve')}
                           disabled={busyRequestId === r.id}
                           className="text-xs px-3 py-1.5 rounded-full bg-green-500/20 text-green-400 hover:bg-green-500/30 disabled:opacity-50"
                         >
                           Одобрить
                         </button>
                         <button
-                          onClick={() => resolveClubRequest(r.id, 'reject')}
+                          onClick={() => resolveRequest(r.id, 'reject')}
                           disabled={busyRequestId === r.id}
                           className="text-xs px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50"
                         >
@@ -287,9 +310,9 @@ export default function AdminPage() {
                       </td>
                     </tr>
                   ))}
-                  {clubRequestsLoaded && clubRequests.length === 0 && (
+                  {requestsLoaded && visibleRequests.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="p-6 text-center text-white/40">
+                      <td colSpan={requestTypeFilter === 'club' ? 4 : 3} className="p-6 text-center text-white/40">
                         Заявок на рассмотрении нет.
                       </td>
                     </tr>

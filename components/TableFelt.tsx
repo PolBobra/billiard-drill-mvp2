@@ -6,6 +6,7 @@ import {
   RAIL,
   PLAY,
   POCKET_R,
+  POCKETS,
   DIAMONDS,
   HEAD_X,
   Point,
@@ -93,9 +94,10 @@ export default function TableFelt({ idPrefix }: { idPrefix: string }) {
         rx={CORNER_CUT}
         fill={`url(#${idPrefix}-felt)`}
       />
-      {/* выемки в сукне под средние лузы (цвет борта, чтобы получился вырез) */}
-      <circle cx={W / 2} cy={PLAY.minY} r={MID_NOTCH} fill={`url(#${idPrefix}-rail)`} />
-      <circle cx={W / 2} cy={PLAY.maxY} r={MID_NOTCH} fill={`url(#${idPrefix}-rail)`} />
+      {/* выемки в сукне под средние лузы (цвет борта, чтобы получился вырез) —
+          центр совпадает с реальной (вдавленной в борт) позицией лузы */}
+      <circle cx={POCKETS[1].x} cy={POCKETS[1].y} r={MID_NOTCH} fill={`url(#${idPrefix}-rail)`} />
+      <circle cx={POCKETS[4].x} cy={POCKETS[4].y} r={MID_NOTCH} fill={`url(#${idPrefix}-rail)`} />
 
       {/* линия дома */}
       <line

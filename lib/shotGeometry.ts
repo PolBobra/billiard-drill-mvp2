@@ -12,6 +12,7 @@ export const FRAME = 9; // толщина деревянной рамы
 export const RAIL = 34; // ширина борта из сукна (его внутренний край = игровое поле)
 export const BALL_R = 11; // радиус шара
 export const POCKET_R = 19; // радиус лузы (впадины)
+export const MIN_BALL_DIST = BALL_R * 2; // минимальное расстояние между центрами шаров — не даём им накладываться
 
 // Игровое поле — по внутреннему краю бортов.
 export const PLAY = { minX: RAIL, minY: RAIL, maxX: W - RAIL, maxY: H - RAIL };
@@ -21,13 +22,17 @@ export const PLAY_H = PLAY.maxY - PLAY.minY;
 // границы, от которых отскакивает биток (внутренний край бортов)
 export const BOUNDS = { minX: PLAY.minX, maxX: PLAY.maxX, minY: PLAY.minY, maxY: PLAY.maxY };
 
+// Средние лузы вдавлены чуть глубже в борт (дальше от игрового поля), чтобы
+// визуально сидеть в вырезе борта, а не торчать в сукно, как угловые.
+const MID_POCKET_RECESS = 6;
+
 // Лузы — в углах игрового поля и по центрам длинных бортов.
 export const POCKETS: Point[] = [
   { x: PLAY.minX, y: PLAY.minY },
-  { x: W / 2, y: PLAY.minY },
+  { x: W / 2, y: PLAY.minY - MID_POCKET_RECESS },
   { x: PLAY.maxX, y: PLAY.minY },
   { x: PLAY.minX, y: PLAY.maxY },
-  { x: W / 2, y: PLAY.maxY },
+  { x: W / 2, y: PLAY.maxY + MID_POCKET_RECESS },
   { x: PLAY.maxX, y: PLAY.maxY },
 ];
 
@@ -88,7 +93,9 @@ export function clamp(v: number, lo: number, hi: number) {
 
 // Направление И «сила» битка после контакта с прицельным шаром (правило
 // прямой линии: стан-удар уводит биток строго перпендикулярно пути прицельного
-// шара; накат/оттяжка добавляют продолжение вдоль этого пути).
+// шара; накат/оттяжка продолжают его движение вдоль ЕГО СОБСТВЕННОЙ линии
+// удара — а не линии прицельного шара, иначе при резаном ударе под углом
+// биток "уезжает" вслед за прицельным шаром вместо продолжения своего пути).
 // power ~ 0..1.35: тонкий срез почти без наката — маленькая сила (короткий
 // скачок), толстый срез или сильный накат — большая (далёкий выход).
 // null — совсем прямой стан-удар в упор: биток замирает на месте.
@@ -103,7 +110,7 @@ export function cueBallShot(
   const objectDir = norm(sub(target, obj));
   const along = aim.x * objectDir.x + aim.y * objectDir.y;
   const tangent = { x: aim.x - along * objectDir.x, y: aim.y - along * objectDir.y };
-  const forward = { x: objectDir.x * spinAmt * 0.9, y: objectDir.y * spinAmt * 0.9 };
+  const forward = { x: aim.x * spinAmt * 0.9, y: aim.y * spinAmt * 0.9 };
   const raw = { x: tangent.x + forward.x, y: tangent.y + forward.y };
   const power = len(raw);
   if (power < 0.02) return null;
@@ -141,10 +148,14 @@ export function buildBouncePath(start: Point, dir: Point, length: number): Point
     const tHit = Math.min(tx, ty);
     if (!isFinite(tHit) || tHit >= remaining) {
       pos = { x: pos.x + d.x * remaining, y: pos.y + d.y * remaining };
+      // страховка: точка физически не может оказаться за бортом, даже если
+      // где-то накопится погрешность вычислений
+      pos = { x: clamp(pos.x, BOUNDS.minX, BOUNDS.maxX), y: clamp(pos.y, BOUNDS.minY, BOUNDS.maxY) };
       pts.push({ ...pos });
       break;
     }
     pos = { x: pos.x + d.x * tHit, y: pos.y + d.y * tHit };
+    pos = { x: clamp(pos.x, BOUNDS.minX, BOUNDS.maxX), y: clamp(pos.y, BOUNDS.minY, BOUNDS.maxY) };
     pts.push({ ...pos });
 
     const pk = pocketAt(pos);
@@ -158,6 +169,28 @@ export function buildBouncePath(start: Point, dir: Point, length: number): Point
     remaining -= tHit;
   }
   return pts;
+}
+
+// Отодвигает точку от уже поставленных шаров, чтобы центры не оказывались
+// ближе MIN_BALL_DIST друг к другу (иначе шары визуально сливаются в один).
+export function resolveBallOverlap(p: Point, others: (Point | null)[]): Point {
+  let result = { ...p };
+  const pts = others.filter((o): o is Point => !!o);
+  for (let pass = 0; pass < 4; pass++) {
+    for (const o of pts) {
+      const d = sub(result, o);
+      const dist = len(d);
+      if (dist >= MIN_BALL_DIST) continue;
+      if (dist < 0.001) {
+        result = { x: result.x + MIN_BALL_DIST, y: result.y };
+      } else {
+        const dir = norm(d);
+        const push = MIN_BALL_DIST - dist;
+        result = { x: result.x + dir.x * push, y: result.y + dir.y * push };
+      }
+    }
+  }
+  return result;
 }
 
 export function polylineLength(pts: Point[]) {

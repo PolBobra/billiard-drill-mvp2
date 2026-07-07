@@ -31,6 +31,7 @@ export default function Nav() {
         <Link href="/find" className="hover:text-accent">Зафиксировать удар</Link>
         <Link href="/errors" className="hover:text-accent">Мои ошибки</Link>
         <Link href="/exercises" className="hover:text-accent">База упражнений</Link>
+        <Link href="/matches" className="hover:text-accent">Матчи</Link>
         <Link href="/profile" className="hover:text-accent">Профиль</Link>
         {isAdmin && (
           <Link href="/admin" className="hover:text-accent">Админка</Link>

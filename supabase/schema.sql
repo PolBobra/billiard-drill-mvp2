@@ -163,3 +163,79 @@ create policy "Users can view own club requests" on addition_requests
 -- profiles.club (текст) заменяется ссылкой на справочник клубов; старую
 -- текстовую колонку не трогаем (не дропаем), просто больше не используем.
 alter table profiles add column if not exists club_id uuid references clubs(id);
+
+-- ============================================
+-- Починка: PostgREST не видел связь profiles -> clubs
+-- ("Could not find a relationship between 'profiles' and 'clubs'").
+-- Если club_id был добавлен колонкой, которая уже существовала БЕЗ FK
+-- (например, из-за повторного запуска ALTER ... ADD COLUMN IF NOT EXISTS —
+-- в этом случае весь ADD COLUMN, включая REFERENCES, тихо пропускается),
+-- то сам constraint мог не создаться. Этот блок безопасно доставляет его,
+-- если он ещё не существует, и просит PostgREST перечитать схему.
+-- ============================================
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.table_constraints
+    where table_name = 'profiles' and constraint_name = 'profiles_club_id_fkey'
+  ) then
+    alter table profiles add constraint profiles_club_id_fkey foreign key (club_id) references clubs(id);
+  end if;
+end $$;
+
+notify pgrst, 'reload schema';
+
+-- ============================================
+-- Тип заявки (клуб / тренер) — одна таблица addition_requests на оба случая.
+-- Старые заявки (клубы) по умолчанию получают type='club'.
+-- ============================================
+alter table addition_requests add column if not exists type text not null default 'club';
+
+-- ============================================
+-- Тренеры: справочник с поиском в профиле (по аналогии с clubs)
+-- ============================================
+create table if not exists coaches (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  created_at timestamptz default now()
+);
+alter table coaches enable row level security;
+create policy "Anyone authenticated can view coaches" on coaches
+  for select using (auth.role() = 'authenticated');
+create extension if not exists pg_trgm;
+create index if not exists coaches_name_search on coaches using gin (name gin_trgm_ops);
+
+alter table profiles add column if not exists coach_id uuid references coaches(id);
+
+-- та же защита от "молчаливо пропущенного" FK, что и для club_id выше
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.table_constraints
+    where table_name = 'profiles' and constraint_name = 'profiles_coach_id_fkey'
+  ) then
+    alter table profiles add constraint profiles_coach_id_fkey foreign key (coach_id) references coaches(id);
+  end if;
+end $$;
+
+notify pgrst, 'reload schema';
+
+-- ============================================
+-- Матчи: счётчик счёта для реальной игры + история
+-- ============================================
+create table if not exists matches (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users on delete cascade,
+  player1_name text not null,
+  player2_name text not null,
+  score1 int not null default 0,
+  score2 int not null default 0,
+  duration_seconds int not null default 0,
+  winner text not null, -- player1 / player2 / draw
+  created_at timestamptz default now()
+);
+alter table matches enable row level security;
+create policy "Users can view own matches" on matches
+  for select using (auth.uid() = user_id);
+create policy "Users can insert own matches" on matches
+  for insert with check (auth.uid() = user_id);
