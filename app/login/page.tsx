@@ -37,7 +37,10 @@ export default function Login() {
     setLoading(false);
 
     if (error) {
-      setError('Неверный email или пароль');
+      // временно показываем реальный текст ошибки от Supabase — "Неверный
+      // email или пароль" был жёстко захардкожен для любой ошибки, из-за
+      // чего сбой проверки капчи выглядел неотличимо от неверного пароля
+      setError(`${error.message} (${error.status ?? '?'})`);
       turnstileRef.current?.reset();
       setCaptchaToken(null);
     } else {
