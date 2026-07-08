@@ -14,6 +14,12 @@ export default function Login() {
   const [passwordUpdated, setPasswordUpdated] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const turnstileRef = useRef<TurnstileInstance>(null);
+  // синхронный флаг вместо (или в дополнение к) состояния loading — React
+  // обновляет state асинхронно, и быстрый двойной клик/Enter+клик мог успеть
+  // отправить два запроса с ОДНИМ И ТЕМ ЖЕ captchaToken до того, как кнопка
+  // становилась disabled; Cloudflare отклоняет повторную проверку токена
+  // как "duplicate", что раньше маскировалось под "неверный пароль"
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     setPasswordUpdated(new URLSearchParams(window.location.search).get('updated') === '1');
@@ -21,13 +27,21 @@ export default function Login() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submittingRef.current) return;
     setError('');
 
     if (!captchaToken) {
       setError('Подождите, идёт проверка безопасности…');
       return;
     }
+    if (turnstileRef.current?.isExpired()) {
+      setError('Проверка безопасности истекла, попробуйте снова');
+      turnstileRef.current.reset();
+      setCaptchaToken(null);
+      return;
+    }
 
+    submittingRef.current = true;
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -35,6 +49,7 @@ export default function Login() {
       options: { captchaToken },
     });
     setLoading(false);
+    submittingRef.current = false;
 
     if (error) {
       // временно показываем реальный текст ошибки от Supabase — "Неверный
