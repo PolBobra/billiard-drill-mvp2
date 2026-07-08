@@ -4,10 +4,20 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import Nav from '@/components/Nav';
 import EntityAutocomplete, { EntityOption } from '@/components/EntityAutocomplete';
+import TrainerVerificationForm from '@/components/TrainerVerificationForm';
+import { disciplineLabel } from '@/lib/disciplines';
+
+type TrainerRequest = {
+  id: string;
+  request_type: 'initial' | 'edit';
+  status: string;
+  created_at: string;
+};
 
 export default function ProfilePage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState('');
   const [fullName, setFullName] = useState('');
   const [cue, setCue] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -21,6 +31,16 @@ export default function ProfilePage() {
   const [coachId, setCoachId] = useState<string | null>(null);
   const [selectedCoach, setSelectedCoach] = useState<EntityOption | null>(null);
 
+  const [isVerifiedTrainer, setIsVerifiedTrainer] = useState(false);
+  const [trainerRank, setTrainerRank] = useState('');
+  const [trainerSchool, setTrainerSchool] = useState('');
+  const [trainerDisciplines, setTrainerDisciplines] = useState<string[]>([]);
+  const [trainerPhone, setTrainerPhone] = useState('');
+  const [trainerTelegram, setTrainerTelegram] = useState('');
+  const [trainerSecretCode, setTrainerSecretCode] = useState('');
+  const [pendingTrainerRequest, setPendingTrainerRequest] = useState<TrainerRequest | null>(null);
+  const [showTrainerForm, setShowTrainerForm] = useState(false);
+
   useEffect(() => {
     async function load() {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -30,10 +50,13 @@ export default function ProfilePage() {
       }
       const uid = sessionData.session.user.id;
       setUserId(uid);
+      setUserEmail(sessionData.session.user.email || '');
 
       const { data } = await supabase
         .from('profiles')
-        .select('full_name, club_id, coach_id, cue, avatar_url')
+        .select(
+          'full_name, club_id, coach_id, cue, avatar_url, is_verified_trainer, trainer_rank, trainer_school, trainer_disciplines, phone, telegram'
+        )
         .eq('id', uid)
         .single();
 
@@ -43,6 +66,33 @@ export default function ProfilePage() {
         setAvatarUrl(data.avatar_url || '');
         setClubId(data.club_id || null);
         setCoachId(data.coach_id || null);
+        setIsVerifiedTrainer(!!data.is_verified_trainer);
+        setTrainerRank(data.trainer_rank || '');
+        setTrainerSchool(data.trainer_school || '');
+        setTrainerDisciplines(data.trainer_disciplines || []);
+        setTrainerPhone(data.phone || '');
+        setTrainerTelegram(data.telegram || '');
+
+        if (data.is_verified_trainer) {
+          const { data: sessionForToken } = await supabase.auth.getSession();
+          const res = await fetch('/api/trainer/me', {
+            headers: { Authorization: `Bearer ${sessionForToken.session?.access_token ?? ''}` },
+          });
+          if (res.ok) {
+            const json = await res.json();
+            setTrainerSecretCode(json.code || '');
+          }
+        }
+
+        const { data: pending } = await supabase
+          .from('trainer_verification_requests')
+          .select('id, request_type, status, created_at')
+          .eq('user_id', uid)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        setPendingTrainerRequest(pending || null);
 
         if (data.club_id) {
           const { data: clubData } = await supabase
@@ -199,6 +249,88 @@ export default function ProfilePage() {
           >
             {saving ? 'Сохраняем…' : 'Сохранить'}
           </button>
+        </div>
+
+        <div className="bg-black/30 p-6 rounded-2xl mt-6 space-y-4">
+          <h2 className="text-lg font-bold text-white">🎓 Тренер</h2>
+
+          {pendingTrainerRequest ? (
+            <p className="text-white/60 text-sm">
+              Заявка ({pendingTrainerRequest.request_type === 'initial' ? 'на верификацию' : 'на изменение резюме'})
+              отправлена {new Date(pendingTrainerRequest.created_at).toLocaleDateString('ru-RU')} и ожидает
+              рассмотрения администратором.
+            </p>
+          ) : isVerifiedTrainer ? (
+            showTrainerForm ? (
+              <TrainerVerificationForm
+                userId={userId!}
+                requestType="edit"
+                prefill={{
+                  fullName,
+                  email: userEmail,
+                  rank: trainerRank,
+                  phone: trainerPhone,
+                  school: trainerSchool,
+                  telegram: trainerTelegram,
+                  disciplines: trainerDisciplines,
+                }}
+                onSubmitted={() => {
+                  setShowTrainerForm(false);
+                  setPendingTrainerRequest({
+                    id: 'local',
+                    request_type: 'edit',
+                    status: 'pending',
+                    created_at: new Date().toISOString(),
+                  });
+                }}
+                onCancel={() => setShowTrainerForm(false)}
+              />
+            ) : (
+              <div className="space-y-2 text-sm text-white/80">
+                <p>Вы верифицированный тренер.</p>
+                {trainerSecretCode && (
+                  <p>
+                    Код для учеников: <span className="text-accent font-mono text-lg">{trainerSecretCode}</span>
+                  </p>
+                )}
+                <p>Звание: {trainerRank || '—'}</p>
+                <p>Школа/клуб: {trainerSchool || '—'}</p>
+                <p>Телефон: {trainerPhone || '—'}</p>
+                <p>Telegram: {trainerTelegram || '—'}</p>
+                <p>
+                  Дисциплины:{' '}
+                  {trainerDisciplines.length ? trainerDisciplines.map(disciplineLabel).join(', ') : '—'}
+                </p>
+                <button
+                  onClick={() => setShowTrainerForm(true)}
+                  className="mt-2 px-4 py-2 rounded-full bg-white/10 text-white/80 text-sm hover:text-white"
+                >
+                  Изменить резюме
+                </button>
+              </div>
+            )
+          ) : showTrainerForm ? (
+            <TrainerVerificationForm
+              userId={userId!}
+              requestType="initial"
+              prefill={{ fullName, email: userEmail }}
+              onSubmitted={() => {
+                setShowTrainerForm(false);
+                setPendingTrainerRequest({
+                  id: 'local',
+                  request_type: 'initial',
+                  status: 'pending',
+                  created_at: new Date().toISOString(),
+                });
+              }}
+              onCancel={() => setShowTrainerForm(false)}
+            />
+          ) : (
+            <label className="flex items-center gap-2 text-white/80 text-sm cursor-pointer">
+              <input type="checkbox" onChange={(e) => e.target.checked && setShowTrainerForm(true)} />
+              Я тренер
+            </label>
+          )}
         </div>
       </div>
     </main>

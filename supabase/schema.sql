@@ -239,3 +239,153 @@ create policy "Users can view own matches" on matches
   for select using (auth.uid() = user_id);
 create policy "Users can insert own matches" on matches
   for insert with check (auth.uid() = user_id);
+
+-- ============================================
+-- Тренер: маркетплейс + привязка ученика + заметки
+-- ============================================
+alter table profiles add column if not exists is_verified_trainer boolean default false;
+alter table profiles add column if not exists trainer_secret_code text unique;
+alter table profiles add column if not exists trainer_rank text;
+alter table profiles add column if not exists trainer_school text;
+alter table profiles add column if not exists trainer_disciplines text[] default '{}';
+alter table profiles add column if not exists phone text;
+alter table profiles add column if not exists telegram text;
+alter table profiles add column if not exists linked_trainer_id uuid references profiles(id) on delete set null;
+
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.table_constraints
+    where table_name = 'profiles' and constraint_name = 'profiles_linked_trainer_id_fkey'
+  ) then
+    alter table profiles add constraint profiles_linked_trainer_id_fkey foreign key (linked_trainer_id) references profiles(id) on delete set null;
+  end if;
+end $$;
+
+create index if not exists profiles_trainer_disciplines_idx on profiles using gin (trainer_disciplines);
+
+-- Все поля тренерского профиля (кроме автогенерируемых is_verified_trainer /
+-- trainer_secret_code, которые ставит только админ) пишутся ИСКЛЮЧИТЕЛЬНО
+-- через заявку в trainer_verification_requests + одобрение админом, а
+-- linked_trainer_id — только через /api/trainer/link (секретный код).
+-- RLS-политика "update own profile" разрешает апдейт СТРОКИ, а не колонки,
+-- поэтому без column-level revoke пользователь мог бы через обычный
+-- supabase.from('profiles').update() выставить себе эти поля напрямую.
+revoke update (
+  is_verified_trainer,
+  trainer_secret_code,
+  trainer_rank,
+  trainer_school,
+  trainer_disciplines,
+  phone,
+  telegram,
+  linked_trainer_id
+) on profiles from authenticated;
+
+-- trainer_secret_code не должен читаться напрямую вообще никем через
+-- обычный select (иначе любой залогиненный, видя тренера в маркетплейсе,
+-- смог бы прочитать его код и привязаться в обход /api/trainer/link —
+-- RLS фильтрует строки, а не столбцы, так что policy на select ниже
+-- сама по себе эту колонку не защищает). Тренер узнаёт свой код через
+-- /api/trainer/me (service-role).
+revoke select (trainer_secret_code) on profiles from authenticated;
+
+-- Маркетплейс: карточка верифицированного тренера видна всем залогиненным,
+-- независимо от их собственной подписки (просмотр и обращение — бесплатно).
+create policy "Anyone logged in can view verified trainer profiles" on profiles
+  for select using (is_verified_trainer = true);
+
+-- Тренер видит профили своих привязанных учеников (нужно для списка
+-- "Мои ученики" — без этого у тренера вообще нет способа узнать, кто на
+-- него привязался). Сами shot_logs/заметки при этом всё равно идут только
+-- через /api/trainer/* с проверкой активной подписки — эта policy лишь
+-- про список имён.
+create policy "Trainer can view own linked students" on profiles
+  for select using (linked_trainer_id = auth.uid());
+
+-- Заявки на верификацию тренера И на последующее редактирование резюме —
+-- одна таблица (request_type). НЕ переиспользуем addition_requests: форма
+-- содержит поля (email, звание, телефон, школа), которых там нет.
+create table if not exists trainer_verification_requests (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users on delete cascade,
+  request_type text not null default 'initial', -- initial / edit
+  full_name text not null,
+  email text not null,
+  rank text not null,
+  phone text not null,
+  school text,
+  telegram text,
+  disciplines text[],
+  status text not null default 'pending', -- pending / approved / rejected
+  created_at timestamptz default now()
+);
+alter table trainer_verification_requests enable row level security;
+
+create policy "Users can view own trainer requests" on trainer_verification_requests
+  for select using (auth.uid() = user_id);
+
+-- edit-заявку может прислать только уже верифицированный тренер — иначе
+-- обычный пользователь обошёл бы верификацию, назвав свою заявку "edit"
+create policy "Users can submit own trainer requests" on trainer_verification_requests
+  for insert with check (
+    auth.uid() = user_id
+    and (
+      request_type = 'initial'
+      or exists (select 1 from profiles where id = auth.uid() and is_verified_trainer)
+    )
+  );
+-- одобрение/отклонение — только через /api/admin/trainer-requests (service-role),
+-- по той же причине, что и у addition_requests: отдельная admin-RLS-политика не нужна.
+
+-- Заметки тренера к конкретным записям shot_logs ученика — односторонние,
+-- без переписки. Insert/update идут ТОЛЬКО через /api/trainer/notes
+-- (service-role), потому что там нужно разом проверить is_verified_trainer +
+-- linked_trainer_id + активную подписку with_trainer — RLS-подзапросом это
+-- дублировало бы ту же логику в двух местах.
+create table if not exists trainer_notes (
+  id uuid primary key default gen_random_uuid(),
+  trainer_id uuid references profiles(id) on delete cascade,
+  student_id uuid references profiles(id) on delete cascade,
+  shot_log_id uuid references shot_logs(id) on delete cascade,
+  note text not null,
+  created_at timestamptz default now(),
+  read_at timestamptz
+);
+alter table trainer_notes enable row level security;
+create policy "Trainer and student can view a note" on trainer_notes
+  for select using (auth.uid() = student_id or auth.uid() = trainer_id);
+
+-- Подписки (with_trainer / trainer_marketplace) — переключаются вручную
+-- админом до появления платёжного шлюза. Select нужен клиенту для гейтинга
+-- вкладки "Мой тренер"; insert/update — только через /api/admin/subscriptions.
+create table if not exists subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users on delete cascade,
+  tier text not null, -- with_trainer / trainer_marketplace
+  status text not null default 'active', -- active / expired / cancelled
+  started_at timestamptz default now(),
+  expires_at timestamptz,
+  -- когда status/expires_at последний раз меняли (проставляется явно в
+  -- /api/admin/subscriptions, без триггера). Нужно, чтобы при истёкшей
+  -- with_trainer "заморозить" тренеру вид shot_logs на момент отключения,
+  -- а не просто закрыть доступ целиком — см. lib/trainerAccess.ts.
+  updated_at timestamptz default now()
+);
+alter table subscriptions enable row level security;
+create policy "Users can view own subscriptions" on subscriptions
+  for select using (auth.uid() = user_id);
+
+-- Рейтлимит на ввод секретного кода тренера (5 попыток/час). Отдельная
+-- таблица, а не in-memory счётчик в API-роуте — на Vercel serverless-функции
+-- не гарантируют один и тот же процесс между запросами, in-memory Map
+-- потерялся бы. RLS включена без единой policy — доступ только через
+-- /api/trainer/link (service-role), клиенту сюда ходить незачем.
+create table if not exists trainer_link_attempts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users on delete cascade,
+  created_at timestamptz default now()
+);
+alter table trainer_link_attempts enable row level security;
+
+notify pgrst, 'reload schema';

@@ -28,20 +28,43 @@ type AdditionRequest = {
   created_at: string;
 };
 
+type TrainerRequest = {
+  id: string;
+  user_id: string;
+  request_type: 'initial' | 'edit';
+  full_name: string;
+  email: string;
+  rank: string;
+  phone: string;
+  school: string | null;
+  telegram: string | null;
+  disciplines: string[] | null;
+  status: string;
+  created_at: string;
+};
+
+type SubscriptionRow = { user_id: string; tier: string; status: string };
+
 export default function AdminPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<'users' | 'requests'>('users');
+  const [tab, setTab] = useState<'users' | 'requests' | 'trainers'>('users');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionRow[]>([]);
 
   const [requests, setRequests] = useState<AdditionRequest[]>([]);
   const [requestsLoaded, setRequestsLoaded] = useState(false);
   const [requestsError, setRequestsError] = useState('');
   const [requestTypeFilter, setRequestTypeFilter] = useState<'club' | 'coach'>('club');
   const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
+
+  const [trainerRequests, setTrainerRequests] = useState<TrainerRequest[]>([]);
+  const [trainerRequestsLoaded, setTrainerRequestsLoaded] = useState(false);
+  const [trainerRequestsError, setTrainerRequestsError] = useState('');
+  const [busyTrainerRequestId, setBusyTrainerRequestId] = useState<string | null>(null);
 
   async function authHeader() {
     const { data } = await supabase.auth.getSession();
@@ -68,13 +91,18 @@ export default function AdminPage() {
         return;
       }
 
-      const res = await fetch('/api/admin/users', { headers: await authHeader() });
-      const json = await res.json();
-      if (!res.ok) {
+      const [usersRes, subsRes] = await Promise.all([
+        fetch('/api/admin/users', { headers: await authHeader() }),
+        fetch('/api/admin/subscriptions', { headers: await authHeader() }),
+      ]);
+      const json = await usersRes.json();
+      if (!usersRes.ok) {
         setError(json.error || 'Не удалось загрузить пользователей');
       } else {
         setUsers(json.users);
       }
+      const subsJson = await subsRes.json();
+      if (subsRes.ok) setSubscriptions(subsJson.subscriptions);
       setLoading(false);
     }
     load();
@@ -94,6 +122,57 @@ export default function AdminPage() {
     }
     loadRequests();
   }, [tab, requestsLoaded]);
+
+  useEffect(() => {
+    if (tab !== 'trainers' || trainerRequestsLoaded) return;
+    async function loadTrainerRequests() {
+      const res = await fetch('/api/admin/trainer-requests', { headers: await authHeader() });
+      const json = await res.json();
+      if (!res.ok) {
+        setTrainerRequestsError(json.error || 'Не удалось загрузить заявки');
+      } else {
+        setTrainerRequests(json.requests);
+      }
+      setTrainerRequestsLoaded(true);
+    }
+    loadTrainerRequests();
+  }, [tab, trainerRequestsLoaded]);
+
+  async function resolveTrainerRequest(id: string, action: 'approve' | 'reject') {
+    setBusyTrainerRequestId(id);
+    const res = await fetch('/api/admin/trainer-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ id, action }),
+    });
+    if (res.ok) {
+      setTrainerRequests((prev) => prev.filter((r) => r.id !== id));
+    } else {
+      const json = await res.json().catch(() => ({}));
+      alert(json.error || 'Не удалось обработать заявку');
+    }
+    setBusyTrainerRequestId(null);
+  }
+
+  async function toggleSubscription(userId: string, tier: 'with_trainer' | 'trainer_marketplace') {
+    const current = subscriptions.find((s) => s.user_id === userId && s.tier === tier);
+    const nextStatus = current?.status === 'active' ? 'cancelled' : 'active';
+    const res = await fetch('/api/admin/subscriptions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ userId, tier, status: nextStatus }),
+    });
+    if (res.ok) {
+      setSubscriptions((prev) => {
+        const exists = prev.some((s) => s.user_id === userId && s.tier === tier);
+        return exists
+          ? prev.map((s) => (s.user_id === userId && s.tier === tier ? { ...s, status: nextStatus } : s))
+          : [...prev, { user_id: userId, tier, status: nextStatus }];
+      });
+    } else {
+      alert('Не удалось изменить подписку');
+    }
+  }
 
   async function resolveRequest(id: string, action: 'approve' | 'reject') {
     setBusyRequestId(id);
@@ -163,6 +242,10 @@ export default function AdminPage() {
   const pendingClubCount = requests.filter((r) => r.type === 'club').length;
   const pendingCoachCount = requests.filter((r) => r.type === 'coach').length;
 
+  function subStatus(userId: string, tier: 'with_trainer' | 'trainer_marketplace') {
+    return subscriptions.find((s) => s.user_id === userId && s.tier === tier)?.status || null;
+  }
+
   return (
     <main className="min-h-screen bg-felt2">
       <Nav />
@@ -181,6 +264,12 @@ export default function AdminPage() {
             className={`px-4 py-2 rounded-full text-sm ${tab === 'requests' ? 'bg-accent text-black' : 'bg-white/10 text-white/70'}`}
           >
             Заявки{requestsLoaded && requests.length > 0 ? ` (${requests.length})` : ''}
+          </button>
+          <button
+            onClick={() => setTab('trainers')}
+            className={`px-4 py-2 rounded-full text-sm ${tab === 'trainers' ? 'bg-accent text-black' : 'bg-white/10 text-white/70'}`}
+          >
+            Тренеры{trainerRequestsLoaded && trainerRequests.length > 0 ? ` (${trainerRequests.length})` : ''}
           </button>
         </div>
 
@@ -208,6 +297,7 @@ export default function AdminPage() {
                     <th className="p-3">Регистрация</th>
                     <th className="p-3">Verified</th>
                     <th className="p-3">Подозрительный</th>
+                    <th className="p-3">Подписки</th>
                     <th className="p-3">Действия</th>
                   </tr>
                 </thead>
@@ -225,6 +315,28 @@ export default function AdminPage() {
                       <td className="p-3">{u.verified ? 'да' : 'нет'}</td>
                       <td className={u.flagged_suspicious ? 'p-3 text-yellow-400' : 'p-3'}>
                         {u.flagged_suspicious ? 'да' : 'нет'}
+                      </td>
+                      <td className="p-3 whitespace-nowrap space-x-1">
+                        <button
+                          onClick={() => toggleSubscription(u.id, 'with_trainer')}
+                          className={`text-xs px-2 py-1 rounded-full ${
+                            subStatus(u.id, 'with_trainer') === 'active'
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-white/10 text-white/60'
+                          }`}
+                        >
+                          С тренером
+                        </button>
+                        <button
+                          onClick={() => toggleSubscription(u.id, 'trainer_marketplace')}
+                          className={`text-xs px-2 py-1 rounded-full ${
+                            subStatus(u.id, 'trainer_marketplace') === 'active'
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-white/10 text-white/60'
+                          }`}
+                        >
+                          Маркетплейс
+                        </button>
                       </td>
                       <td className="p-3 whitespace-nowrap space-x-2">
                         <button
@@ -246,7 +358,7 @@ export default function AdminPage() {
                   ))}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="p-6 text-center text-white/40">
+                      <td colSpan={10} className="p-6 text-center text-white/40">
                         Ничего не найдено.
                       </td>
                     </tr>
@@ -313,6 +425,69 @@ export default function AdminPage() {
                   {requestsLoaded && visibleRequests.length === 0 && (
                     <tr>
                       <td colSpan={requestTypeFilter === 'club' ? 4 : 3} className="p-6 text-center text-white/40">
+                        Заявок на рассмотрении нет.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {tab === 'trainers' && (
+          <>
+            {trainerRequestsError && <p className="text-red-400 mb-4">{trainerRequestsError}</p>}
+
+            <div className="overflow-x-auto bg-black/30 rounded-2xl">
+              <table className="w-full text-sm text-left text-white/80">
+                <thead className="text-white/50 border-b border-white/10">
+                  <tr>
+                    <th className="p-3">Тип</th>
+                    <th className="p-3">ФИО</th>
+                    <th className="p-3">Email</th>
+                    <th className="p-3">Звание</th>
+                    <th className="p-3">Телефон</th>
+                    <th className="p-3">Школа</th>
+                    <th className="p-3">Telegram</th>
+                    <th className="p-3">Дисциплины</th>
+                    <th className="p-3">Дата</th>
+                    <th className="p-3">Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trainerRequests.map((r) => (
+                    <tr key={r.id} className="border-b border-white/5 last:border-0">
+                      <td className="p-3">{r.request_type === 'initial' ? 'Верификация' : 'Правка'}</td>
+                      <td className="p-3">{r.full_name}</td>
+                      <td className="p-3">{r.email}</td>
+                      <td className="p-3">{r.rank}</td>
+                      <td className="p-3">{r.phone}</td>
+                      <td className="p-3">{r.school || '—'}</td>
+                      <td className="p-3">{r.telegram || '—'}</td>
+                      <td className="p-3">{(r.disciplines || []).join(', ') || '—'}</td>
+                      <td className="p-3">{new Date(r.created_at).toLocaleDateString('ru-RU')}</td>
+                      <td className="p-3 whitespace-nowrap space-x-2">
+                        <button
+                          onClick={() => resolveTrainerRequest(r.id, 'approve')}
+                          disabled={busyTrainerRequestId === r.id}
+                          className="text-xs px-3 py-1.5 rounded-full bg-green-500/20 text-green-400 hover:bg-green-500/30 disabled:opacity-50"
+                        >
+                          Одобрить
+                        </button>
+                        <button
+                          onClick={() => resolveTrainerRequest(r.id, 'reject')}
+                          disabled={busyTrainerRequestId === r.id}
+                          className="text-xs px-3 py-1.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50"
+                        >
+                          Отклонить
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {trainerRequestsLoaded && trainerRequests.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="p-6 text-center text-white/40">
                         Заявок на рассмотрении нет.
                       </td>
                     </tr>
