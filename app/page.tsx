@@ -1,10 +1,11 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function Home() {
   const router = useRouter();
+  const [debugError, setDebugError] = useState<string | null>(null);
 
   useEffect(() => {
     let redirected = false;
@@ -15,27 +16,36 @@ export default function Home() {
       router.replace(path);
     };
 
-    // Известная проблема: на некоторых версиях мобильного Safari
-    // (особенно в приватном режиме) supabase-js использует
-    // navigator.locks для синхронизации сессии между вкладками,
-    // и getSession() может зависнуть навсегда без ответа.
-    // Подстраховываемся таймаутом — если за 3 секунды ответа нет,
-    // считаем, что сессии нет, и уходим на /login. Если сессия
-    // реально была, onAuthStateChange ниже всё равно её поймает
-    // и перекинет в /dashboard.
+    // ВРЕМЕННО: ловим вообще любые необработанные ошибки/промисы
+    // на этой странице и показываем их прямо на экране — чтобы увидеть,
+    // что реально падает на проблемных телефонах, раз консоль недоступна.
+    const onError = (e: ErrorEvent) => {
+      setDebugError(`Error: ${e.message} @ ${e.filename}:${e.lineno}`);
+    };
+    const onRejection = (e: PromiseRejectionEvent) => {
+      setDebugError(`Unhandled rejection: ${String(e.reason)}`);
+    };
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+
     const timeoutId = setTimeout(() => {
       redirectOnce('/login');
     }, 3000);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      clearTimeout(timeoutId);
-      redirectOnce(session ? '/dashboard' : '/login');
-    });
+    try {
+      supabase.auth
+        .getSession()
+        .then(({ data: { session } }) => {
+          clearTimeout(timeoutId);
+          redirectOnce(session ? '/dashboard' : '/login');
+        })
+        .catch((err) => {
+          setDebugError(`getSession rejected: ${String(err)}`);
+        });
+    } catch (err) {
+      setDebugError(`getSession threw sync: ${String(err)}`);
+    }
 
-    // onAuthStateChange оставляем для случая перехода по ссылке из письма
-    // подтверждения — тогда Supabase обработает токены из URL и создаст
-    // сессию уже после того, как быстрая проверка выше могла отработать
-    // с session = null (или сработал таймаут).
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -48,12 +58,21 @@ export default function Home() {
     return () => {
       clearTimeout(timeoutId);
       subscription.unsubscribe();
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
     };
   }, [router]);
 
   return (
-    <main className="min-h-screen bg-felt2 text-white/70 flex items-center justify-center">
-      Загрузка…
+    <main className="min-h-screen bg-felt2 text-white/70 flex items-center justify-center p-4">
+      <div className="text-center max-w-md">
+        <p>Загрузка…</p>
+        {debugError && (
+          <pre className="mt-4 text-red-400 text-xs whitespace-pre-wrap break-words bg-black/40 p-3 rounded-lg text-left">
+            {debugError}
+          </pre>
+        )}
+      </div>
     </main>
   );
 }
