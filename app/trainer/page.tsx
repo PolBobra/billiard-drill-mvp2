@@ -5,6 +5,7 @@ import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { supabase } from '@/lib/supabaseClient';
 import Nav from '@/components/Nav';
 import { DISCIPLINES, disciplineLabel } from '@/lib/disciplines';
+import { TIER_LABELS } from '@/lib/subscriptionTiers';
 
 type MarketplaceTrainer = {
   id: string;
@@ -356,8 +357,8 @@ function MyTrainerTab({
   if (!hasSubscription) {
     return (
       <div className="bg-black/30 rounded-2xl p-6 text-white/70">
-        Раздел доступен по подписке «with_trainer». Подписка подключается вручную администратором — напишите
-        нам, чтобы её активировать.
+        Раздел доступен по подписке «{TIER_LABELS.with_trainer}». Подписка подключается вручную администратором
+        — напишите нам, чтобы её активировать.
       </div>
     );
   }

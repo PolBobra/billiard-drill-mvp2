@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { findMatchingExercise } from '@/lib/matching';
 import { recomputeSkills } from '@/lib/skills';
 import { ERROR_TYPES, errorLabel } from '@/lib/errorTypes';
 import Nav from '@/components/Nav';
@@ -54,14 +53,26 @@ export default function FindExercise() {
     setLoading(true);
     setResult(null);
 
-    const { exercise, matchQuality } = await findMatchingExercise({
-      errorType,
-      angle: diagram.intendedAngle,
-      distance: diagram.distance,
-    });
-
     const { data: sessionData } = await supabase.auth.getSession();
     const userId = sessionData.session?.user.id;
+
+    const res = await fetch('/api/match-exercise', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${sessionData.session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({
+        errorType,
+        angle: diagram.intendedAngle,
+        actualAngle: diagram.actualAngle,
+        deviation: diagram.deviation,
+        distance: diagram.distance,
+        englishOffset: diagram.englishOffset,
+        spinOffset: diagram.spinOffset,
+      }),
+    });
+    const { exercise, matchQuality, reasoning } = await res.json();
 
     if (userId) {
       await supabase.from('shot_logs').insert({
@@ -75,7 +86,7 @@ export default function FindExercise() {
       await recomputeSkills(userId);
     }
 
-    setResult({ exercise, matchQuality });
+    setResult({ exercise, matchQuality, reasoning });
     setLoading(false);
   }
 
@@ -146,8 +157,11 @@ export default function FindExercise() {
                   <div>Сложность: <b className="text-white">{result.exercise.difficulty}</b></div>
                 </div>
                 <p className="text-white/60 text-sm mt-3">Критерий успеха: {result.exercise.success_criteria}</p>
-                {result.matchQuality !== 'exact' && (
-                  <p className="text-yellow-400 text-xs mt-3">⚠ Точного совпадения не нашлось — показано ближайшее подходящее упражнение.</p>
+                {result.reasoning && (
+                  <p className="text-white/50 text-xs mt-3 italic">{result.reasoning}</p>
+                )}
+                {result.matchQuality === 'ai_fallback' && (
+                  <p className="text-yellow-400 text-xs mt-3">⚠ Подбор без ИИ (сервис недоступен) — показано ближайшее подходящее упражнение по формальным критериям.</p>
                 )}
               </>
             ) : (

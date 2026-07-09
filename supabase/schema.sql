@@ -388,4 +388,19 @@ create table if not exists trainer_link_attempts (
 );
 alter table trainer_link_attempts enable row level security;
 
+-- ============================================
+-- Упражнения: расстановка по координатам бриллиантов
+-- ============================================
+-- cue_ball_position / object_ball_position — jsonb вида
+-- {"rail":"bottom","diamond":2,"crossRail":"left","crossDiamond":1}
+-- (см. lib/diamondGeometry.ts). target_pocket — один из шести ключей
+-- ('top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right').
+-- Угол среза НЕ хранится числом — он всегда пересчитывается на лету из этих
+-- координат (calculateCutAngle), чтобы не мог разойтись с реальной геометрией.
+-- angle_min/angle_max остаются как есть — это только приблизительный диапазон
+-- для фильтра/подбора упражнения, а не то, что рисуется на схеме.
+alter table exercises add column if not exists cue_ball_position jsonb;
+alter table exercises add column if not exists object_ball_position jsonb;
+alter table exercises add column if not exists target_pocket text;
+
 notify pgrst, 'reload schema';

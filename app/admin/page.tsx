@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import Nav from '@/components/Nav';
+import { TIER_LABELS } from '@/lib/subscriptionTiers';
 
 type AdminUser = {
   id: string;
@@ -322,20 +323,21 @@ export default function AdminPage() {
                           className={`text-xs px-2 py-1 rounded-full ${
                             subStatus(u.id, 'with_trainer') === 'active'
                               ? 'bg-green-500/20 text-green-400'
-                              : 'bg-white/10 text-white/60'
+                              : 'bg-white/10 text-white/40'
                           }`}
                         >
-                          С тренером
+                          {TIER_LABELS.with_trainer}: {subStatus(u.id, 'with_trainer') === 'active' ? 'вкл' : 'выкл'}
                         </button>
                         <button
                           onClick={() => toggleSubscription(u.id, 'trainer_marketplace')}
                           className={`text-xs px-2 py-1 rounded-full ${
                             subStatus(u.id, 'trainer_marketplace') === 'active'
                               ? 'bg-green-500/20 text-green-400'
-                              : 'bg-white/10 text-white/60'
+                              : 'bg-white/10 text-white/40'
                           }`}
                         >
-                          Маркетплейс
+                          {TIER_LABELS.trainer_marketplace}:{' '}
+                          {subStatus(u.id, 'trainer_marketplace') === 'active' ? 'вкл' : 'выкл'}
                         </button>
                       </td>
                       <td className="p-3 whitespace-nowrap space-x-2">

@@ -19,8 +19,18 @@ export const PLAY = { minX: RAIL, minY: RAIL, maxX: W - RAIL, maxY: H - RAIL };
 export const PLAY_W = PLAY.maxX - PLAY.minX;
 export const PLAY_H = PLAY.maxY - PLAY.minY;
 
-// границы, от которых отскакивает биток (внутренний край бортов)
-export const BOUNDS = { minX: PLAY.minX, maxX: PLAY.maxX, minY: PLAY.minY, maxY: PLAY.maxY };
+// границы, от которых отскакивает биток — центр шара останавливается на
+// расстоянии радиуса от сукна борта (сам борт задевает не центр, а край шара),
+// иначе предсказанная траектория "проваливается" в борт на BALL_R пикселей
+// глубже, чем шар физически может там оказаться (см. clampPlay в BilliardTable.tsx,
+// которая ставит шары с тем же отступом — здесь отступа не было, отскок и
+// расстановка шаров жили по разным границам).
+export const BOUNDS = {
+  minX: PLAY.minX + BALL_R,
+  maxX: PLAY.maxX - BALL_R,
+  minY: PLAY.minY + BALL_R,
+  maxY: PLAY.maxY - BALL_R,
+};
 
 // Средние лузы вдавлены чуть глубже в борт (дальше от игрового поля), чтобы
 // визуально сидеть в вырезе борта, а не торчать в сукно, как угловые.

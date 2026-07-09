@@ -1,9 +1,19 @@
+import { Metadata } from 'next';
 import './globals.css';
 import Footer from '@/components/Footer';
 
-export const metadata = {
-  title: 'Бильярд Тренер',
-  description: 'Система тренировки бильярда с подбором упражнений',
+export const metadata: Metadata = {
+  metadataBase: new URL('https://www.breakrun.ru'),
+  title: 'BreakRun — тренажёр для бильярда',
+  description: 'BreakRun — система тренировки бильярда с подбором упражнений под твои ошибки.',
+  openGraph: {
+    title: 'BreakRun — тренажёр для бильярда',
+    description: 'Система тренировки бильярда с подбором упражнений под твои ошибки.',
+    url: 'https://www.breakrun.ru',
+    siteName: 'BreakRun',
+    locale: 'ru_RU',
+    type: 'website',
+  },
 };
 
 export const viewport = {
