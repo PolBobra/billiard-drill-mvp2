@@ -13,6 +13,8 @@ const DISTANCE_LABELS: Record<string, string> = {
   far: 'Далеко',
 };
 
+type Tournament = { id: string; name: string; created_at: string };
+
 export default function FindExercise() {
   const router = useRouter();
   const [diagram, setDiagram] = useState<ShotDiagram | null>(null);
@@ -21,6 +23,12 @@ export default function FindExercise() {
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
+  // Активный турнир только читается здесь (начинают/сохраняют его на
+  // странице "Мои ошибки") — нужен, чтобы автоматически привязывать новые
+  // ошибки к нему и показывать переключатель "вне турнира".
+  const [activeTournament, setActiveTournament] = useState<Tournament | null>(null);
+  const [excludeFromTournament, setExcludeFromTournament] = useState(false);
+
   useEffect(() => {
     async function checkAuth() {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -28,6 +36,16 @@ export default function FindExercise() {
         router.replace('/login');
         return;
       }
+      const uid = sessionData.session.user.id;
+
+      const { data: tournament } = await supabase
+        .from('tournaments')
+        .select('id, name, created_at')
+        .eq('user_id', uid)
+        .is('ended_at', null)
+        .maybeSingle();
+      setActiveTournament(tournament || null);
+
       setCheckingAuth(false);
     }
     checkAuth();
@@ -82,11 +100,13 @@ export default function FindExercise() {
         distance: diagram.distance,
         matched_exercise_id: exercise?.id ?? null,
         diagram: diagram,
+        tournament_id: activeTournament && !excludeFromTournament ? activeTournament.id : null,
       });
       await recomputeSkills(userId);
     }
 
     setResult({ exercise, matchQuality, reasoning });
+    setExcludeFromTournament(false);
     setLoading(false);
   }
 
@@ -98,6 +118,12 @@ export default function FindExercise() {
         <p className="text-white/60 text-sm mb-6">
           Отметь биток, прицельный шар, точку удара по битку, куда целился и куда шар покатился на самом деле.
         </p>
+
+        {activeTournament && (
+          <p className="text-accent text-sm mb-4 bg-accent/10 px-4 py-2 rounded-lg inline-block">
+            🏆 Идёт турнир «{activeTournament.name}» — новые ошибки будут сохраняться в него
+          </p>
+        )}
 
         <div className="bg-black/30 p-4 rounded-2xl">
           <BilliardTable onComplete={setDiagram} />
@@ -133,6 +159,17 @@ export default function FindExercise() {
                 ))}
               </div>
             </div>
+
+            {activeTournament && (
+              <label className="flex items-center gap-2 text-white/70 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={excludeFromTournament}
+                  onChange={(e) => setExcludeFromTournament(e.target.checked)}
+                />
+                Эта ошибка вне турнира «{activeTournament.name}»
+              </label>
+            )}
 
             <button
               onClick={handleSubmit}

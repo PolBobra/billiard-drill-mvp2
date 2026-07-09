@@ -59,7 +59,7 @@ export default function Login() {
       turnstileRef.current?.reset();
       setCaptchaToken(null);
     } else {
-      router.push('/dashboard');
+      router.push('/find');
     }
   }
 

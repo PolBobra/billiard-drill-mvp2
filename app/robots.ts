@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/admin', '/api', '/dashboard', '/profile', '/trainer', '/matches', '/find', '/errors', '/exercises'],
+      disallow: ['/admin', '/api', '/profile', '/trainer', '/matches', '/find', '/errors', '/exercises'],
     },
     sitemap: 'https://www.breakrun.ru/sitemap.xml',
   };

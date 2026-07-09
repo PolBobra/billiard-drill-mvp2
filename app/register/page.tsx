@@ -54,7 +54,7 @@ export default function Register() {
         .eq('id', data.user.id);
     }
     setLoading(false);
-    router.push('/dashboard');
+    router.push('/find');
   }
 
   if (needsConfirmation) {

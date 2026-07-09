@@ -37,7 +37,7 @@ export default function Home() {
         .getSession()
         .then(({ data: { session } }) => {
           clearTimeout(timeoutId);
-          redirectOnce(session ? '/dashboard' : '/login');
+          redirectOnce(session ? '/find' : '/login');
         })
         .catch((err) => {
           setDebugError(`getSession rejected: ${String(err)}`);
@@ -51,7 +51,7 @@ export default function Home() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
         clearTimeout(timeoutId);
-        router.replace('/dashboard');
+        router.replace('/find');
       }
     });
 

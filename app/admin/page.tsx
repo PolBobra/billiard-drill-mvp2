@@ -88,7 +88,7 @@ export default function AdminPage() {
         .single();
 
       if (!profile?.is_admin) {
-        router.replace('/dashboard');
+        router.replace('/find');
         return;
       }
 

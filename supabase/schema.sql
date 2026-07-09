@@ -404,3 +404,32 @@ alter table exercises add column if not exists object_ball_position jsonb;
 alter table exercises add column if not exists target_pocket text;
 
 notify pgrst, 'reload schema';
+
+-- ============================================
+-- Турниры: именованная группировка ошибок ("Мои ошибки" -> папки)
+-- ============================================
+-- Игрок перед турниром задаёт название, дальше все ошибки, зафиксированные
+-- на /find, привязываются к этому турниру (пока он не сохранён). ended_at
+-- null = турнир идёт сейчас; not null = сохранён/завершён.
+create table if not exists tournaments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users on delete cascade,
+  name text not null,
+  created_at timestamptz default now(),
+  ended_at timestamptz
+);
+alter table tournaments enable row level security;
+create policy "Users can view own tournaments" on tournaments
+  for select using (auth.uid() = user_id);
+create policy "Users can insert own tournaments" on tournaments
+  for insert with check (auth.uid() = user_id);
+create policy "Users can update own tournaments" on tournaments
+  for update using (auth.uid() = user_id);
+
+-- не больше одного активного (незавершённого) турнира на пользователя
+create unique index if not exists tournaments_one_active_per_user
+  on tournaments (user_id) where (ended_at is null);
+
+alter table shot_logs add column if not exists tournament_id uuid references tournaments(id) on delete set null;
+
+notify pgrst, 'reload schema';

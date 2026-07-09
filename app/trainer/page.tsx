@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabaseClient';
 import Nav from '@/components/Nav';
 import { DISCIPLINES, disciplineLabel } from '@/lib/disciplines';
 import { TIER_LABELS } from '@/lib/subscriptionTiers';
+import { ShotDiagram } from '@/lib/shotGeometry';
+import ShotDiagramView from '@/components/ShotDiagramView';
 
 type MarketplaceTrainer = {
   id: string;
@@ -27,6 +29,7 @@ type ShotLog = {
   distance: string | null;
   completed: boolean;
   created_at: string;
+  diagram: ShotDiagram | null;
 };
 
 type TrainerNote = {
@@ -437,6 +440,7 @@ function MyStudentsTab({ authHeader }: { authHeader: () => Promise<{ Authorizati
   const [savingLogId, setSavingLogId] = useState<string | null>(null);
   const [accessError, setAccessError] = useState('');
   const [canWrite, setCanWrite] = useState(true);
+  const [openLogId, setOpenLogId] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -520,12 +524,29 @@ function MyStudentsTab({ authHeader }: { authHeader: () => Promise<{ Authorizati
             {shotLogs.length === 0 && <p className="text-white/40">У ученика пока нет записей.</p>}
             {shotLogs.map((log) => {
               const existingNote = notesByLog[log.id];
+              const open = openLogId === log.id;
               return (
                 <div key={log.id} className="bg-black/30 rounded-xl p-4">
-                  <p className="text-white/80 text-sm">
-                    {log.error_type} · {log.distance || '—'} ·{' '}
-                    {new Date(log.created_at).toLocaleDateString('ru-RU')}
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setOpenLogId(open ? null : log.id)}
+                    className="w-full flex items-center justify-between text-left"
+                  >
+                    <p className="text-white/80 text-sm">
+                      {log.error_type} · {log.distance || '—'} ·{' '}
+                      {new Date(log.created_at).toLocaleDateString('ru-RU')}
+                    </p>
+                    <span className="text-white/40 text-sm shrink-0 ml-2">{open ? '▲' : '▼'}</span>
+                  </button>
+                  {open && (
+                    <div className="mt-3">
+                      {log.diagram ? (
+                        <ShotDiagramView d={log.diagram} />
+                      ) : (
+                        <p className="text-white/40 text-sm">Для этой ошибки рисунок не сохранён.</p>
+                      )}
+                    </div>
+                  )}
                   {existingNote ? (
                     <p className="text-accent text-sm mt-2">Заметка: {existingNote.note}</p>
                   ) : canWrite ? (
