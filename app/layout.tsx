@@ -14,6 +14,9 @@ export const metadata: Metadata = {
     locale: 'ru_RU',
     type: 'website',
   },
+  verification: {
+    yandex: '935e06423eef1df0',
+  },
 };
 
 export const viewport = {
