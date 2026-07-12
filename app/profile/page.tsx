@@ -152,6 +152,23 @@ export default function ProfilePage() {
     setMessage(error ? 'Ошибка сохранения: ' + error.message : 'Сохранено ✓');
   }
 
+  async function refreshTrainerProfile() {
+    if (!userId) return;
+    const { data } = await supabase
+      .from('profiles')
+      .select('full_name, trainer_rank, trainer_school, trainer_disciplines, phone, telegram')
+      .eq('id', userId)
+      .single();
+    if (data) {
+      setFullName(data.full_name || '');
+      setTrainerRank(data.trainer_rank || '');
+      setTrainerSchool(data.trainer_school || '');
+      setTrainerDisciplines(data.trainer_disciplines || []);
+      setTrainerPhone(data.phone || '');
+      setTrainerTelegram(data.telegram || '');
+    }
+  }
+
   async function handleDeleteListing() {
     if (!confirm('Удалить объявление с маркетплейса тренеров? Резюме и код для учеников сохранятся — сможете опубликоваться снова через новую заявку.')) {
       return;
@@ -296,14 +313,10 @@ export default function ProfilePage() {
                   telegram: trainerTelegram,
                   disciplines: trainerDisciplines,
                 }}
-                onSubmitted={() => {
+                onSubmitted={async () => {
                   setShowTrainerForm(false);
-                  setPendingTrainerRequest({
-                    id: 'local',
-                    request_type: 'edit',
-                    status: 'pending',
-                    created_at: new Date().toISOString(),
-                  });
+                  await refreshTrainerProfile();
+                  setMessage('Резюме обновлено ✓');
                 }}
                 onCancel={() => setShowTrainerForm(false)}
               />
