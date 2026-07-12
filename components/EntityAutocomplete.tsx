@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { notifyAdmin } from '@/lib/notifyAdmin';
 
 export type EntityOption = { id: string; name: string; city?: string | null };
 
@@ -67,7 +68,11 @@ export default function EntityAutocomplete({
     if (!error) {
       setRequestSent(true);
       setShowRequestForm(false);
+      const cityPart = withCity && requestCity.trim() ? `, ${requestCity.trim()}` : '';
       setRequestCity('');
+      notifyAdmin(
+        `🆕 Заявка на добавление ${requestType === 'club' ? 'клуба' : 'тренера'}: «${query.trim()}»${cityPart}`
+      );
     }
   }
 

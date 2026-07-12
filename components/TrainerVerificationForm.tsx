@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { DISCIPLINES } from '@/lib/disciplines';
+import { notifyAdmin } from '@/lib/notifyAdmin';
 
 type Prefill = {
   fullName?: string;
@@ -64,6 +65,9 @@ export default function TrainerVerificationForm({
       setError('Ошибка отправки: ' + insertError.message);
       return;
     }
+    notifyAdmin(
+      `🎓 Заявка на ${requestType === 'initial' ? 'верификацию тренера' : 'изменение резюме тренера'}: ${fullName.trim()} (${email.trim()})`
+    );
     onSubmitted();
   }
 
