@@ -28,6 +28,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
+  // Админ отвечает клиенту, сделав Reply прямо на сообщение с пересланным
+  // вопросом ("❓ Вопрос в поддержку (chat 123456): ...") — вытаскиваем id
+  // того чата из текста и пересылаем ответ туда напрямую, а не пытаемся
+  // сами угадать, кому предназначен ответ.
+  const repliedText: string | undefined = update?.message?.reply_to_message?.text;
+  if (repliedText && String(chatId) === String(process.env.TELEGRAM_CHAT_ID)) {
+    const match = repliedText.match(/\(chat (-?\d+)\)/);
+    if (match) {
+      const targetChatId = match[1];
+      await sendTelegramMessage(text, targetChatId);
+      await sendTelegramMessage(`✅ Отправлено пользователю (chat ${targetChatId})`, chatId);
+      return NextResponse.json({ ok: true });
+    }
+  }
+
   const faqAnswer = matchFaq(text);
   if (faqAnswer) {
     await sendTelegramMessage(faqAnswer, chatId);
