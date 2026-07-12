@@ -40,6 +40,7 @@ export default function ProfilePage() {
   const [trainerSecretCode, setTrainerSecretCode] = useState('');
   const [pendingTrainerRequest, setPendingTrainerRequest] = useState<TrainerRequest | null>(null);
   const [showTrainerForm, setShowTrainerForm] = useState(false);
+  const [deletingListing, setDeletingListing] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -149,6 +150,27 @@ export default function ProfilePage() {
       .eq('id', userId);
     setSaving(false);
     setMessage(error ? 'Ошибка сохранения: ' + error.message : 'Сохранено ✓');
+  }
+
+  async function handleDeleteListing() {
+    if (!confirm('Удалить объявление с маркетплейса тренеров? Резюме и код для учеников сохранятся — сможете опубликоваться снова через новую заявку.')) {
+      return;
+    }
+    setDeletingListing(true);
+    const { data: sessionData } = await supabase.auth.getSession();
+    const res = await fetch('/api/trainer/listing', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${sessionData.session?.access_token ?? ''}` },
+    });
+    setDeletingListing(false);
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      setMessage('Не удалось удалить объявление: ' + (json.error || 'ошибка'));
+      return;
+    }
+    setIsVerifiedTrainer(false);
+    setTrainerSecretCode('');
+    setMessage('Объявление удалено с маркетплейса ✓');
   }
 
   if (loading) {
@@ -301,12 +323,21 @@ export default function ProfilePage() {
                   Дисциплины:{' '}
                   {trainerDisciplines.length ? trainerDisciplines.map(disciplineLabel).join(', ') : '—'}
                 </p>
-                <button
-                  onClick={() => setShowTrainerForm(true)}
-                  className="mt-2 px-4 py-2 rounded-full bg-white/10 text-white/80 text-sm hover:text-white"
-                >
-                  Изменить резюме
-                </button>
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => setShowTrainerForm(true)}
+                    className="px-4 py-2 rounded-full bg-white/10 text-white/80 text-sm hover:text-white"
+                  >
+                    Изменить резюме
+                  </button>
+                  <button
+                    onClick={handleDeleteListing}
+                    disabled={deletingListing}
+                    className="px-4 py-2 rounded-full bg-red-500/20 text-red-300 text-sm hover:bg-red-500/30 disabled:opacity-50"
+                  >
+                    {deletingListing ? 'Удаляем…' : 'Удалить объявление'}
+                  </button>
+                </div>
               </div>
             )
           ) : showTrainerForm ? (

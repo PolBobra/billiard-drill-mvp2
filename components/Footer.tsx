@@ -10,7 +10,16 @@ export default function Footer() {
       ·{' '}
       <Link href="/privacy" className="hover:text-white/70 underline">
         Политика конфиденциальности
-      </Link>
+      </Link>{' '}
+      ·{' '}
+      <a
+        href="https://t.me/Polka_bober_bot"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="hover:text-white/70 underline"
+      >
+        Поддержка в Telegram
+      </a>
     </footer>
   );
 }
