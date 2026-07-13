@@ -11,6 +11,10 @@ declare global {
       reset: (widgetId: number) => void;
       destroy: (widgetId: number) => void;
     };
+    // Yandex сам вызывает эту функцию, когда smartCaptcha реально готов к
+    // работе — это надёжнее, чем ловить DOM-событие 'load' у <script>,
+    // которое срабатывает раньше, чем сам виджет успевает инициализироваться.
+    __onSmartCaptchaReady?: () => void;
   }
 }
 
@@ -49,15 +53,13 @@ const YandexCaptcha = forwardRef<
     if (window.smartCaptcha) {
       renderWidget();
     } else {
+      window.__onSmartCaptchaReady = renderWidget;
       const existing = document.querySelector<HTMLScriptElement>('script[data-yandex-smartcaptcha]');
-      if (existing) {
-        existing.addEventListener('load', renderWidget);
-      } else {
+      if (!existing) {
         const script = document.createElement('script');
-        script.src = 'https://smartcaptcha.yandexcloud.net/captcha.js';
+        script.src = 'https://smartcaptcha.yandexcloud.net/captcha.js?render=onload&onload=__onSmartCaptchaReady';
         script.async = true;
         script.dataset.yandexSmartcaptcha = 'true';
-        script.addEventListener('load', renderWidget);
         document.head.appendChild(script);
       }
     }
