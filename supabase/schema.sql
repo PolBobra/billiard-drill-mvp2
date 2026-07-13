@@ -282,6 +282,13 @@ revoke update (
   linked_trainer_id
 ) on profiles from authenticated;
 
+-- is_admin/flagged_suspicious попали под ту же дыру: "update own profile"
+-- разрешает апдейт строки целиком, а не отдельных столбцов, значит без
+-- этого revoke любой залогиненный мог выставить себе is_admin = true
+-- напрямую через supabase.from('profiles').update() и получить полный
+-- доступ к /admin.
+revoke update (is_admin, flagged_suspicious) on profiles from authenticated;
+
 -- trainer_secret_code не должен читаться напрямую вообще никем через
 -- обычный select (иначе любой залогиненный, видя тренера в маркетплейсе,
 -- смог бы прочитать его код и привязаться в обход /api/trainer/link —
@@ -431,5 +438,18 @@ create unique index if not exists tournaments_one_active_per_user
   on tournaments (user_id) where (ended_at is null);
 
 alter table shot_logs add column if not exists tournament_id uuid references tournaments(id) on delete set null;
+
+-- Рейт-лимит на /api/auth/login и /api/auth/register (по IP, до логина
+-- ещё нет user_id) — без него это единственная защита от перебора
+-- паролей/спам-регистраций после того, как встроенную капчу Supabase
+-- пришлось выключить ради Yandex SmartCaptcha (см. lib/yandexCaptcha.ts).
+create table if not exists auth_attempts (
+  id uuid primary key default gen_random_uuid(),
+  ip text not null,
+  route text not null,
+  created_at timestamptz default now()
+);
+alter table auth_attempts enable row level security;
+create index if not exists auth_attempts_ip_route_idx on auth_attempts (ip, route, created_at);
 
 notify pgrst, 'reload schema';

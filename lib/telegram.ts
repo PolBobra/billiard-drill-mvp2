@@ -11,6 +11,6 @@ export async function sendTelegramMessage(text: string, chatId?: string | number
   await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: targetChatId, text, parse_mode: 'HTML' }),
+    body: JSON.stringify({ chat_id: targetChatId, text }),
   }).catch(() => {});
 }
