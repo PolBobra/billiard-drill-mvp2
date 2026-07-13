@@ -23,10 +23,17 @@ export async function POST(req: Request) {
   const update = await req.json().catch(() => null);
   const chatId = update?.message?.chat?.id;
   const text = update?.message?.text;
+  const from = update?.message?.from;
 
   if (!chatId || typeof text !== 'string' || !text.trim() || text.length > 1000) {
     return NextResponse.json({ ok: true });
   }
+
+  // Человекочитаемая подпись отправителя для пересылки админу — иначе видно
+  // только технический chat_id, и непонятно, кто именно спрашивает.
+  const fromLabel = from
+    ? [from.first_name, from.last_name].filter(Boolean).join(' ') + (from.username ? ` (@${from.username})` : '')
+    : '';
 
   // Админ отвечает клиенту, сделав Reply прямо на сообщение с пересланным
   // вопросом ("❓ Вопрос в поддержку (chat 123456): ...") — вытаскиваем id
@@ -51,7 +58,7 @@ export async function POST(req: Request) {
 
   if (!process.env.ANTHROPIC_API_KEY) {
     await sendTelegramMessage('Не получилось ответить автоматически — передал вопрос администратору, скоро ответим.', chatId);
-    await sendTelegramMessage(`❓ Вопрос в поддержку (chat ${chatId}): ${text}`);
+    await sendTelegramMessage(`❓ Вопрос в поддержку от ${fromLabel || 'без имени'} (chat ${chatId}): ${text}`);
     return NextResponse.json({ ok: true });
   }
 
@@ -74,6 +81,6 @@ export async function POST(req: Request) {
     await sendTelegramMessage('Не получилось ответить автоматически — передал вопрос администратору, скоро ответим.', chatId);
   }
 
-  await sendTelegramMessage(`❓ Вопрос в поддержку (chat ${chatId}): ${text}`);
+  await sendTelegramMessage(`❓ Вопрос в поддержку от ${fromLabel || 'без имени'} (chat ${chatId}): ${text}`);
   return NextResponse.json({ ok: true });
 }
