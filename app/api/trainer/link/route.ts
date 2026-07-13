@@ -1,21 +1,9 @@
 import { NextResponse } from 'next/server';
 import { requireUser, isUserFail } from '@/lib/userAuth';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { verifyYandexCaptcha } from '@/lib/yandexCaptcha';
 
 const MAX_ATTEMPTS_PER_HOUR = 5;
-
-async function verifyTurnstile(token: string): Promise<boolean> {
-  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      secret: process.env.TURNSTILE_SECRET_KEY!,
-      response: token,
-    }),
-  });
-  const json = await res.json();
-  return json.success === true;
-}
 
 // Привязка ученика к тренеру по секретному коду. 6 символов — небольшое
 // пространство, поэтому реальная защита от подбора это рейтлимит +
@@ -32,7 +20,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Пройдите проверку безопасности' }, { status: 400 });
   }
 
-  const captchaOk = await verifyTurnstile(captchaToken);
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  const captchaOk = await verifyYandexCaptcha(captchaToken, ip);
   if (!captchaOk) {
     return NextResponse.json({ error: 'Проверка безопасности не пройдена' }, { status: 400 });
   }

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
+import YandexCaptcha, { type YandexCaptchaInstance } from '@/components/YandexCaptcha';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function Login() {
@@ -13,7 +13,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [passwordUpdated, setPasswordUpdated] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const turnstileRef = useRef<TurnstileInstance>(null);
+  const captchaRef = useRef<YandexCaptchaInstance>(null);
   // синхронный флаг вместо (или в дополнение к) состояния loading — React
   // обновляет state асинхронно, и быстрый двойной клик/Enter+клик мог успеть
   // отправить два запроса с ОДНИМ И ТЕМ ЖЕ captchaToken до того, как кнопка
@@ -34,33 +34,32 @@ export default function Login() {
       setError('Подождите, идёт проверка безопасности…');
       return;
     }
-    if (turnstileRef.current?.isExpired()) {
-      setError('Проверка безопасности истекла, попробуйте снова');
-      turnstileRef.current.reset();
+
+    submittingRef.current = true;
+    setLoading(true);
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, captchaToken }),
+    });
+    const json = await res.json();
+    setLoading(false);
+    submittingRef.current = false;
+
+    if (!res.ok) {
+      setError(json.error || 'Не удалось войти');
+      captchaRef.current?.reset();
       setCaptchaToken(null);
       return;
     }
 
-    submittingRef.current = true;
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-      options: { captchaToken },
-    });
-    setLoading(false);
-    submittingRef.current = false;
-
-    if (error) {
-      // временно показываем реальный текст ошибки от Supabase — "Неверный
-      // email или пароль" был жёстко захардкожен для любой ошибки, из-за
-      // чего сбой проверки капчи выглядел неотличимо от неверного пароля
-      setError(`${error.message} (${error.status ?? '?'})`);
-      turnstileRef.current?.reset();
-      setCaptchaToken(null);
-    } else {
-      router.push('/find');
+    if (json.session) {
+      await supabase.auth.setSession({
+        access_token: json.session.access_token,
+        refresh_token: json.session.refresh_token,
+      });
     }
+    router.push('/find');
   }
 
   return (
@@ -90,13 +89,10 @@ export default function Login() {
           </Link>
         </div>
 
-        <Turnstile
-          ref={turnstileRef}
-          siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
+        <YandexCaptcha
+          ref={captchaRef}
+          siteKey={process.env.NEXT_PUBLIC_YANDEX_CAPTCHA_SITE_KEY!}
           onSuccess={(token) => setCaptchaToken(token)}
-          onExpire={() => setCaptchaToken(null)}
-          onError={() => setCaptchaToken(null)}
-          options={{ theme: 'dark' }}
         />
 
         {error && <p className="text-red-400 text-sm">{error}</p>}

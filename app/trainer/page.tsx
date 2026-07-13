@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
+import YandexCaptcha, { type YandexCaptchaInstance } from '@/components/YandexCaptcha';
 import { supabase } from '@/lib/supabaseClient';
 import Nav from '@/components/Nav';
 import { DISCIPLINES, disciplineLabel } from '@/lib/disciplines';
@@ -272,7 +272,7 @@ function MyTrainerTab({
   const [checkingSub, setCheckingSub] = useState(true);
   const [code, setCode] = useState('');
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const turnstileRef = useRef<TurnstileInstance>(null);
+  const captchaRef = useRef<YandexCaptchaInstance>(null);
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState('');
   const [linked, setLinked] = useState(!!linkedTrainerId);
@@ -346,7 +346,7 @@ function MyTrainerTab({
     setLinking(false);
     if (!res.ok) {
       setLinkError(json.error || 'Не удалось привязаться');
-      turnstileRef.current?.reset();
+      captchaRef.current?.reset();
       setCaptchaToken(null);
       return;
     }
@@ -378,13 +378,10 @@ function MyTrainerTab({
           className="w-full p-3 rounded-lg bg-white/10 text-white placeholder-white/50 tracking-widest text-center text-lg font-mono"
           placeholder="XXXXXX"
         />
-        <Turnstile
-          ref={turnstileRef}
-          siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
+        <YandexCaptcha
+          ref={captchaRef}
+          siteKey={process.env.NEXT_PUBLIC_YANDEX_CAPTCHA_SITE_KEY!}
           onSuccess={(token) => setCaptchaToken(token)}
-          onExpire={() => setCaptchaToken(null)}
-          onError={() => setCaptchaToken(null)}
-          options={{ theme: 'dark' }}
         />
         {linkError && <p className="text-red-400 text-sm">{linkError}</p>}
         <button

@@ -2,7 +2,7 @@
 import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
+import YandexCaptcha, { type YandexCaptchaInstance } from '@/components/YandexCaptcha';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function Register() {
@@ -15,7 +15,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const turnstileRef = useRef<TurnstileInstance>(null);
+  const captchaRef = useRef<YandexCaptchaInstance>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,31 +28,31 @@ export default function Register() {
 
     setError('');
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { name }, captchaToken },
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password, captchaToken }),
     });
-    if (error) {
+    const json = await res.json();
+
+    if (!res.ok) {
       setLoading(false);
-      setError(error.message);
-      turnstileRef.current?.reset();
+      setError(json.error || 'Не удалось зарегистрироваться');
+      captchaRef.current?.reset();
       setCaptchaToken(null);
       return;
     }
 
-    if (!data.session) {
+    if (!json.session) {
       setLoading(false);
       setNeedsConfirmation(true);
       return;
     }
 
-    if (data.user) {
-      await supabase
-        .from('profiles')
-        .update({ terms_accepted_at: new Date().toISOString() })
-        .eq('id', data.user.id);
-    }
+    await supabase.auth.setSession({
+      access_token: json.session.access_token,
+      refresh_token: json.session.refresh_token,
+    });
     setLoading(false);
     router.push('/find');
   }
@@ -124,13 +124,10 @@ export default function Register() {
           </span>
         </label>
 
-        <Turnstile
-          ref={turnstileRef}
-          siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
+        <YandexCaptcha
+          ref={captchaRef}
+          siteKey={process.env.NEXT_PUBLIC_YANDEX_CAPTCHA_SITE_KEY!}
           onSuccess={(token) => setCaptchaToken(token)}
-          onExpire={() => setCaptchaToken(null)}
-          onError={() => setCaptchaToken(null)}
-          options={{ theme: 'dark' }}
         />
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
